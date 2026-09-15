@@ -1,119 +1,115 @@
-# Interview Hardening Design
+# 面试加固设计文档
 
-Date: 2026-09-15
-Status: Approved
-Project: agent-service-toolkit (interview showcase)
+日期：2026-09-15
+状态：已批准
+项目：agent-service-toolkit（面试展示项目）
 
-## Goal
+## 目标
 
-Close three weaknesses in the repo so it holds up as an interview showcase for LangGraph:
-an architecture that is defensible when a senior interviewer probes past the default
-demos. Each change is independently testable, small, and zero new runtime dependencies.
+补上仓库三处弱点，让它在 LangGraph 面试展示中站得住——当资深面试官绕过默认 demo 深挖时，
+架构要能自圆其说。每处改动独立可测、改动量小、不新增运行时依赖。
 
-## 1. RAG Vector Ingestion Pipeline
+## 1. RAG 向量入库链路
 
-**Problem:** `src/agents/tools.py:50-76` reads a pre-existing `./chroma_db` directory. An
-ingestion script DOES exist (`scripts/create_chroma_db.py`) but it is naive: it deletes and
-rebuilds the whole index each run (`shutil.rmtree`, line 24-26), supports only `.pdf`/`.docx`,
-and hardcodes paths. There is no `md`/`txt` support and no incremental update, so the repo
-can't claim a defensible ingestion story.
+**问题：** `src/agents/tools.py:50-76` 直接读现成的 `./chroma_db` 目录。入库脚本确实存在
+（`scripts/create_chroma_db.py`），但它很粗糙：每次运行都删掉整个索引重建（`shutil.rmtree`，
+第 24-26 行）、只支持 `.pdf`/`.docx`、路径硬编码。没有 `md`/`txt` 支持、没有增量更新，
+所以仓库无法宣称自己的入库链路站得住脚。
 
-**Approach:** Upgrade the existing script (reuse, don't re-create) + configure the loader.
+**方案：** 改造已有脚本（复用而非新建）+ 让加载器可配置。
 
-- Rework `scripts/create_chroma_db.py`:
-  - Keep the existing chunk→embed→Chroma pipeline and `RecursiveCharacterTextSplitter`
-  - Extend format support: `.md`/`.txt` via plain text reader, `.pdf` via `PyPDFLoader`,
-    `.docx` via `Docx2txtLoader` (all loaders already imported or transitively available)
-  - Make destructive `delete_chroma_db` opt-in (default off) instead of default-true
-  - Paths/collection from `settings` (`CHROMA_DIR`), fall back to `./chroma_db`
-  - (YAGNI: skip per-file hash manifest — full rebuild is fine for a demo corpus; note in
-    code comment that hash-based incremental indexing is the upgrade path)
-- Refactor `src/agents/tools.py`:
-  - `load_chroma_db()` no longer hardcodes `./chroma_db`; reads `CHROMA_DIR` from
-    `core.settings`, falls back to existing default
+- 重做 `scripts/create_chroma_db.py`：
+  - 保留现有的 chunk→embed→Chroma 流水线和 `RecursiveCharacterTextSplitter`
+  - 扩展格式支持：`.md`/`.txt` 用纯文本读取，`.pdf` 用 `PyPDFLoader`，
+    `.docx` 用 `Docx2txtLoader`（这些 loader 已导入或作为传递依赖可用）
+  - 破坏性的 `delete_chroma_db` 从默认开启改为默认关闭（opt-in）
+  - 路径/collection 从 `settings` 读取（`CHROMA_DIR`），回退到 `./chroma_db`
+  - （YAGNI：跳过按文件 hash 的增量清单——demo 语料全量重建就够了；在代码注释里
+    注明基于 hash 的增量索引是升级路径）
+- 重构 `src/agents/tools.py`：
+  - `load_chroma_db()` 不再硬编码 `./chroma_db`；从 `core.settings` 读 `CHROMA_DIR`，
+    回退到现有默认值
 
-### Data flow
+### 数据流
 
 ```
 data/*.{md,pdf,txt,docx}
-        │ scripts/create_chroma_db.py (upgraded)
+        │ scripts/create_chroma_db.py（升级后）
         ▼
- RecursiveCharacterTextSplitter (2000/500, existing defaults)
+ RecursiveCharacterTextSplitter（2000/500，沿用现有默认值）
         │ OpenAIEmbeddings
         ▼
- Chroma (CHROMA_DIR) ──► retriever (k=5) ◄── rag_assistant Database_Search tool
+ Chroma（CHROMA_DIR）──► retriever（k=5）◄── rag_assistant Database_Search 工具
 ```
 
-## 2. Long-Term Memory SQLite Persistence
+## 2. 长期记忆 SQLite 持久化
 
-**Problem:** `src/memory/sqlite.py:4,36-40` wraps LangGraph's `InMemoryStore` for the SQLite
-database type — long-term memory is lost on restart. The file is named `sqlite.py` but
-persists nothing.
+**问题：** `src/memory/sqlite.py:4,36-40` 为 SQLite 数据库类型包装了 LangGraph 的
+`InMemoryStore` ——长期记忆在重启后即丢。文件名叫 `sqlite.py` 却什么都不持久化。
 
-**Approach:** Swap the `InMemoryStore` wrapper for LangGraph's official `AsyncSqliteStore`.
+**方案：** 把 `InMemoryStore` 包装换成 LangGraph 官方的 `AsyncSqliteStore`。
 
-- `langgraph.store.sqlite.AsyncSqliteStore` ships INSIDE the installed `langgraph` package
-  (verified: `langgraph/store/sqlite/__init__.py`) — no new dependency, no custom store to write.
-  It implements the exact interface the codebase already uses: `from_conn_string(conn_string)`
-  as an async context manager, `setup()`, `aget(namespace, key)`, `aput(namespace, key, value)`.
-  Round-trip + persistence across close/reopen verified by a live run (value survives reopen).
-- Rework `src/memory/sqlite.py`:
-  - `get_sqlite_store()` becomes a thin `@asynccontextmanager` wrapping
-    `AsyncSqliteStore.from_conn_string(settings.SQLITE_STORE_PATH)`, `await store.setup()`, yield
-  - Delete the `AsyncInMemoryStore` wrapper and its `InMemoryStore` import
-- Add `SQLITE_STORE_PATH: str = "memory_store.db"` to `core/settings.py` (distinct from the
-  checkpointer's `SQLITE_DB_PATH = "checkpoints.db"`)
-- `initialize_store()` (`src/memory/__init__.py:28-37`) and `service.py` lifespan: unchanged —
-  they already `await store.setup()` and use `async with`
+- `langgraph.store.sqlite.AsyncSqliteStore` 就随已安装的 `langgraph` 包发布
+  （已验证：`langgraph/store/sqlite/__init__.py`）——不需要新依赖，也不用手写 store。
+  它实现了代码库已在用的接口：`from_conn_string(conn_string)` 作为异步上下文管理器、
+  `setup()`、`aget(namespace, key)`、`aput(namespace, key, value)`。
+  关闭后重开仍能取回值（实时运行已验证持久化成立）。
+- 重做 `src/memory/sqlite.py`：
+  - `get_sqlite_store()` 变成薄薄的 `@asynccontextmanager`，包装
+    `AsyncSqliteStore.from_conn_string(settings.SQLITE_STORE_PATH)`，`await store.setup()`
+    后 yield
+  - 删掉 `AsyncInMemoryStore` 包装和它的 `InMemoryStore` 导入
+- 在 `core/settings.py` 增加 `SQLITE_STORE_PATH: str = "memory_store.db"`
+  （与 checkpointer 的 `SQLITE_DB_PATH = "checkpoints.db"` 区分开）
+- `initialize_store()`（`src/memory/__init__.py:28-37`）和 `service.py` 的 lifespan：
+  不用改——它们本来就 `await store.setup()` 并用 `async with`
 
-### Why this shape
+### 为什么这么设计
 
-- Same interface as `AsyncPostgresStore` → the lifespan wiring in `service.py` is untouched
-- Zero new code for the store itself; the entire fix is the wrapper swap + one settings field
-- The sqlite.py `checkpointer` provider (`get_sqlite_saver`) already uses
-  `AsyncSqliteSaver.from_conn_string` — `get_sqlite_store` now mirrors it exactly, so the story
-  is "short-term checkpointer and long-term store now both backed by the same SQLite file"
-- Verified live: `AsyncSqliteStore` persists values across store close/reopen
+- 与 `AsyncPostgresStore` 接口一致 → `service.py` 的 lifespan 装配不动
+- store 本身零新增代码；整个修复就是换包装 + 一个 settings 字段
+- sqlite.py 的 checkpointer 提供者（`get_sqlite_saver`）本来就用
+  `AsyncSqliteSaver.from_conn_string` ——让 `get_sqlite_store` 完全照抄它，这样讲法是
+  "短期 checkpointer 和长期 store 现在都由同一个 SQLite 文件支撑"
+- 实测验证：`AsyncSqliteStore` 在 store 关闭/重开后值仍保留
 
-## 3. Supervisor Real Search Tool
+## 3. Supervisor 真实搜索工具
 
-**Problem:** `src/agents/langgraph_supervisor_agent.py:21-30` — `web_search` returns hardcoded
-FAANG headcounts. Reads as a demo fake; an interviewer asking "show me the tool" hits the end.
+**问题：** `src/agents/langgraph_supervisor_agent.py:21-30` ——`web_search` 返回硬编码的
+FAANG 员工数。一看就是 demo 假数据；面试官一句"把工具给我看看"就到底了。
 
-**Approach:** Replace the fake with the real DuckDuckGo search already used by
-`research_assistant.py`.
+**方案：** 把假工具换成 `research_assistant.py` 已经在用的真实 DuckDuckGo 搜索。
 
-- In `langgraph_supervisor_agent.py`: `web_search` becomes a thin wrapper over
-  `DuckDuckGoSearchResults` (already imported in research_assistant.py)
-- Keep `sub-agent-math_expert` (add/multiply) and `sub-agent-research_expert` structure
-  and the `create_supervisor` handoff wiring unchanged — only the tool backend becomes real
-- `langgraph_supervisor_hierarchy_agent.py` imports `web_search` from the flat agent
-  (`:4`) — benefits automatically, no change there
+- 在 `langgraph_supervisor_agent.py`：`web_search` 变成 `DuckDuckGoSearchResults`
+  （research_assistant.py 已导入）的薄包装
+- 保留 `sub-agent-math_expert`（add/multiply）和 `sub-agent-research_expert` 的结构
+  以及 `create_supervisor` 的 handoff 装配不动——只把工具后端换成真的
+- `langgraph_supervisor_hierarchy_agent.py` 从扁平 agent 导入 `web_search`
+  （`:4`）——自动受益，不需要改那里
 
-## Out of scope (YAGNI)
+## 范围外（YAGNI）
 
-- Multi-vector-DB abstraction (Chroma/FAISS/LanceDB) — no interview narrative gain
-- git-based auto-sync for docs — overkill; manifest hash is enough
-- Postgres migration of the existing path — orthogonal; both DB paths keep working
-- Cross-agent shared state — not part of the three goals
+- 多向量库抽象（Chroma/FAISS/LanceDB）——对面试叙事无增益
+- 文档的 git 自动同步——过度设计；manifest hash 已经够
+- 现有路径的 Postgres 迁移——正交；两条 DB 路径都继续可用
+- 跨 agent 共享状态——不属于三个目标
 
-## Testing
+## 测试
 
-- `tests/test_ingest.py`: build a tiny Chroma in a temp dir from 2 fixture docs (one md, one
-  txt), assert retrieval returns a hit for a known query; assert `delete_chroma_db=False` still
-  rebuilds/upserts without error (idempotent re-run)
-- `tests/test_sqlite_store.py`: `async with AsyncSqliteStore.from_conn_string(tmp)` → aput +
-  aget roundtrip → close → reopen same file → aget returns the value (proves persistence).
-  The test asserts the wiring in `get_sqlite_store`/`initialize_store`, not the SDK itself
-- Supervisor: smoke check that `langgraph_supervisor_agent` compiles and its `web_search`
-  tool invokes (mock-free; network required — mark `@pytest.mark` so CI default can skip)
-- Run: `uv sync --frozen && pytest`
+- `tests/test_ingest.py`：在临时目录里用 2 个 fixture 文档（一个 md、一个 txt）建个小 Chroma，
+  断言已知查询能召回命中；断言 `delete_chroma_db=False` 时重建/upsert 不报错（幂等重跑）
+- `tests/test_sqlite_store.py`：`async with AsyncSqliteStore.from_conn_string(tmp)` → aput +
+  aget 往返 → 关闭 → 重开同一文件 → aget 返回值（证明持久化）。
+  该测试断言的是 `get_sqlite_store`/`initialize_store` 的装配，不是 SDK 本身
+- Supervisor：冒烟检查 `langgraph_supervisor_agent` 能编译、其 `web_search`
+  工具能调用（不 mock；需要网络——打 `@pytest.mark` 让 CI 默认可跳过）
+- 运行：`uv sync --frozen && pytest`
 
-## Files touched
+## 涉及文件
 
-- `scripts/create_chroma_db.py` (rework, not new)
-- `src/agents/tools.py` (configurable loader)
-- `src/memory/sqlite.py` (swap InMemoryStore wrapper for official AsyncSqliteStore)
-- `src/agents/langgraph_supervisor_agent.py` (real web_search)
-- `src/core/settings.py` (CHROMA_DIR / SQLITE_STORE_PATH)
-- `tests/test_ingest.py`, `tests/test_sqlite_store.py` (new)
+- `scripts/create_chroma_db.py`（重做，非新建）
+- `src/agents/tools.py`（加载器可配置）
+- `src/memory/sqlite.py`（InMemoryStore 包装换成官方 AsyncSqliteStore）
+- `src/agents/langgraph_supervisor_agent.py`（web_search 换真）
+- `src/core/settings.py`（CHROMA_DIR / SQLITE_STORE_PATH）
+- `tests/test_ingest.py`、`tests/test_sqlite_store.py`（新建）
