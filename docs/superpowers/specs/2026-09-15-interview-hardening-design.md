@@ -50,26 +50,30 @@ data/*.{md,pdf,txt,docx}
 database type — long-term memory is lost on restart. The file is named `sqlite.py` but
 persists nothing.
 
-**Approach:** Implement a real disk-backed store for the SQLite path.
+**Approach:** Swap the `InMemoryStore` wrapper for LangGraph's official `AsyncSqliteStore`.
 
-- New `AsyncSqliteStore` in `src/memory/sqlite.py`:
-  - Backed by `sqlite3` + `aiosqlite` (aiosqlite is already a core dependency)
-  - Schema mirrors LangGraph's store table: `namespace`, `key`, `value` (JSON), timestamps
-  - Implements the same async interface Postgres uses: `setup()`, `aget(namespace, key)`,
-    `aput(namespace, key, value)`, `__aenter__`/`__aexit__`
-  - Store file at `settings.SQLITE_DB_PATH.with_store_suffix` (e.g. `checkpoints_store.db`)
-    or a configurable `SQLITE_STORE_PATH`
-- `initialize_store()` (`src/memory/__init__.py:28-37`): SQLite branch returns
-  `AsyncSqliteStore` instead of the `InMemoryStore` wrapper
-- `service.py` lifespan already calls optional `setup()`/`__aenter__` — no change needed
-- Delete the now-unused `AsyncInMemoryStore` wrapper
+- `langgraph.store.sqlite.AsyncSqliteStore` ships INSIDE the installed `langgraph` package
+  (verified: `langgraph/store/sqlite/__init__.py`) — no new dependency, no custom store to write.
+  It implements the exact interface the codebase already uses: `from_conn_string(conn_string)`
+  as an async context manager, `setup()`, `aget(namespace, key)`, `aput(namespace, key, value)`.
+  Round-trip + persistence across close/reopen verified by a live run (value survives reopen).
+- Rework `src/memory/sqlite.py`:
+  - `get_sqlite_store()` becomes a thin `@asynccontextmanager` wrapping
+    `AsyncSqliteStore.from_conn_string(settings.SQLITE_STORE_PATH)`, `await store.setup()`, yield
+  - Delete the `AsyncInMemoryStore` wrapper and its `InMemoryStore` import
+- Add `SQLITE_STORE_PATH: str = "memory_store.db"` to `core/settings.py` (distinct from the
+  checkpointer's `SQLITE_DB_PATH = "checkpoints.db"`)
+- `initialize_store()` (`src/memory/__init__.py:28-37`) and `service.py` lifespan: unchanged —
+  they already `await store.setup()` and use `async with`
 
 ### Why this shape
 
 - Same interface as `AsyncPostgresStore` → the lifespan wiring in `service.py` is untouched
-- `sqlite3`/`aiosqlite` are stdlib/already-present; no new deps
-- Values stored as JSON → survives restart; namespace isolation per user preserved
-  (`interrupt_agent.py` reads/writes via the same `store.aget/aput` calls)
+- Zero new code for the store itself; the entire fix is the wrapper swap + one settings field
+- The sqlite.py `checkpointer` provider (`get_sqlite_saver`) already uses
+  `AsyncSqliteSaver.from_conn_string` — `get_sqlite_store` now mirrors it exactly, so the story
+  is "short-term checkpointer and long-term store now both backed by the same SQLite file"
+- Verified live: `AsyncSqliteStore` persists values across store close/reopen
 
 ## 3. Supervisor Real Search Tool
 
@@ -96,10 +100,11 @@ FAANG headcounts. Reads as a demo fake; an interviewer asking "show me the tool"
 ## Testing
 
 - `tests/test_ingest.py`: build a tiny Chroma in a temp dir from 2 fixture docs (one md, one
-  txt), assert retrieval returns a hit for a known query; assert skip-when-unchanged and
-  rebuild behavior
-- `tests/test_sqlite_store.py`: create `AsyncSqliteStore` on temp file, put + get roundtrip,
-  assert persistence across store close/reopen
+  txt), assert retrieval returns a hit for a known query; assert `delete_chroma_db=False` still
+  rebuilds/upserts without error (idempotent re-run)
+- `tests/test_sqlite_store.py`: `async with AsyncSqliteStore.from_conn_string(tmp)` → aput +
+  aget roundtrip → close → reopen same file → aget returns the value (proves persistence).
+  The test asserts the wiring in `get_sqlite_store`/`initialize_store`, not the SDK itself
 - Supervisor: smoke check that `langgraph_supervisor_agent` compiles and its `web_search`
   tool invokes (mock-free; network required — mark `@pytest.mark` so CI default can skip)
 - Run: `uv sync --frozen && pytest`
@@ -108,7 +113,7 @@ FAANG headcounts. Reads as a demo fake; an interviewer asking "show me the tool"
 
 - `scripts/create_chroma_db.py` (rework, not new)
 - `src/agents/tools.py` (configurable loader)
-- `src/memory/sqlite.py` (replace InMemoryStore with AsyncSqliteStore)
+- `src/memory/sqlite.py` (swap InMemoryStore wrapper for official AsyncSqliteStore)
 - `src/agents/langgraph_supervisor_agent.py` (real web_search)
 - `src/core/settings.py` (CHROMA_DIR / SQLITE_STORE_PATH)
 - `tests/test_ingest.py`, `tests/test_sqlite_store.py` (new)
