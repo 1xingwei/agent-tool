@@ -1,6 +1,7 @@
 import inspect
 import json
 import logging
+import os
 import warnings
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -87,7 +88,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # Set up both components
             if hasattr(saver, "setup"):  # ignore: union-attr
                 await saver.setup()
-            # Only setup store for Postgres as InMemoryStore doesn't need setup
+            # Store can be either SQLite or Postgres, both of which need setup
             if hasattr(store, "setup"):  # ignore: union-attr
                 await store.setup()
 
@@ -407,8 +408,12 @@ async def feedback(feedback: Feedback) -> FeedbackResponse:
     credentials can be stored and managed in the service rather than the client.
     See: https://api.smith.langchain.com/redoc#tag/feedback/operation/create_feedback_api_v1_feedback_post
     """
-    client = LangsmithClient()
     kwargs = feedback.kwargs or {}
+    # Feedback is an optional LangSmith integration; without a key, no-op instead of a 500.
+    if not os.getenv("LANGSMITH_API_KEY"):
+        logger.info("LANGSMITH_API_KEY not set; skipping feedback recording")
+        return FeedbackResponse()
+    client = LangsmithClient()
     client.create_feedback(
         run_id=feedback.run_id,
         key=feedback.key,

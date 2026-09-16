@@ -2,7 +2,9 @@ from contextlib import AbstractAsyncContextManager
 
 from langgraph.checkpoint.mongodb import MongoDBSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.store.redis.aio import AsyncRedisStore
 
 from core.settings import DatabaseType, settings
 from memory.mongodb import get_mongo_saver
@@ -11,12 +13,14 @@ from memory.sqlite import get_sqlite_saver, get_sqlite_store
 
 
 def initialize_database() -> AbstractAsyncContextManager[
-    AsyncSqliteSaver | AsyncPostgresSaver | MongoDBSaver
+    AsyncSqliteSaver | AsyncPostgresSaver | MongoDBSaver | AsyncRedisSaver
 ]:
     """
     Initialize the appropriate database checkpointer based on configuration.
     Returns an initialized AsyncCheckpointer instance.
     """
+    if settings.REDIS_URL:
+        return AsyncRedisSaver.from_conn_string(settings.REDIS_URL)
     if settings.DATABASE_TYPE == DatabaseType.POSTGRES:
         return get_postgres_saver()
     if settings.DATABASE_TYPE == DatabaseType.MONGO:
@@ -30,6 +34,8 @@ def initialize_store():
     Initialize the appropriate store based on configuration.
     Returns an async context manager for the initialized store.
     """
+    if settings.REDIS_URL:
+        return AsyncRedisStore.from_conn_string(settings.REDIS_URL)
     if settings.DATABASE_TYPE == DatabaseType.POSTGRES:
         return get_postgres_store()
     # TODO: Add Mongo store - https://pypi.org/project/langgraph-store-mongodb/

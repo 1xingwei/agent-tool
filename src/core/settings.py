@@ -124,6 +124,16 @@ class Settings(BaseSettings):
         DatabaseType.SQLITE
     )  # Options: DatabaseType.SQLITE or DatabaseType.POSTGRES
     SQLITE_DB_PATH: str = "checkpoints.db"
+    # Long-term memory store; kept separate from the checkpoints DB above
+    SQLITE_STORE_PATH: str = "memory_store.db"
+
+    # RAG vector database used by Database_Search
+    CHROMA_DIR: str = "./chroma_db"
+
+    # Optional: when set, checkpoint (short-term) and store (long-term) both
+    # use Redis so state is shared across instances. Requires a Redis server
+    # with the RedisJSON + RediSearch modules (Redis 8.0+ or Redis Stack).
+    REDIS_URL: str | None = None
 
     # PostgreSQL Configuration
     POSTGRES_USER: str | None = None

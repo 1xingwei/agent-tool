@@ -84,6 +84,7 @@ static_agent = agent.compile(checkpointer=MemorySaver())
 def mock_database_settings(mock_env):
     """Fixture to ensure database settings are clean"""
     with patch("memory.settings") as mock_settings:
+        mock_settings.REDIS_URL = None
         yield mock_settings
 
 

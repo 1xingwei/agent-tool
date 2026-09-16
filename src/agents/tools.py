@@ -6,6 +6,8 @@ from langchain_chroma import Chroma
 from langchain_core.tools import BaseTool, tool
 from langchain_openai import OpenAIEmbeddings
 
+from core.settings import settings
+
 
 def calculator_func(expression: str) -> str:
     """Calculates a math expression using numexpr.
@@ -57,7 +59,7 @@ def load_chroma_db():
         ) from e
 
     # Load the stored vector database
-    chroma_db = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
+    chroma_db = Chroma(persist_directory=settings.CHROMA_DIR, embedding_function=embeddings)
     retriever = chroma_db.as_retriever(search_kwargs={"k": 5})
     return retriever
 

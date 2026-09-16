@@ -6,14 +6,16 @@ You can build a RAG assistant using a Chroma database.
 
 To create a Chroma database:
 
-1. Add the data you want to use to a folder, i.e. `./data`, Word and PDF files are currently supported.
+1. Add the data you want to use to a folder, i.e. `./data`. Supported formats: `.md`, `.txt`, `.pdf`, `.docx`.
 2. Open [`create_chroma_db.py` file](../scripts/create_chroma_db.py) and set the folder_path variable to the path to your data i.e. `./data`.
-3. You can change the database name, chunk size and overlap size.
+3. You can change the database name, chunk size and overlap size. The database path defaults to `settings.CHROMA_DIR` (`.env` key `CHROMA_DIR`), falling back to `./chroma_db`.
 4. Assuming you have already followed the [Quickstart](../README.md#quickstart) and activated the virtual environment, to create the database run:
 
    ```sh
    python scripts/create_chroma_db.py
    ```
+
+   Re-running is safe — existing data isn't deleted unless you pass `delete_chroma_db=True`.
 
 5. If successful, a Chroma db will be created in the repository root directory.
 
@@ -21,7 +23,7 @@ To create a Chroma database:
 
 To create a RAG assistant:
 
-1. Open [`tools.py` file](../src/agents/tools.py) and make sure the persist_directory is pointing to the database you created previously.
+1. Point `settings.CHROMA_DIR` (or the `CHROMA_DIR` env var) at the database you created previously; `src/agents/tools.py` reads it when loading the retriever.
 2. Modify the amount of documents returned, currently set to 5.
 3. Update the `database_search_func` function description to accurately describe what the purpose and contents of your database is.
 4. Open [`rag_assistant.py` file](../src/agents/rag_assistant.py) and update the agent's instuctions to describe what the assistant's speciality is and what knowledge it has access to, for example:

@@ -172,7 +172,10 @@ def test_invoke_interrupt(test_client, mock_agent) -> None:
 
 
 @patch("service.service.LangsmithClient")
-def test_feedback(mock_client: langsmith.Client, test_client) -> None:
+def test_feedback(
+    mock_client: langsmith.Client, test_client, monkeypatch
+) -> None:
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
     ls_instance = mock_client.return_value
     ls_instance.create_feedback.return_value = None
     body = {
@@ -188,6 +191,17 @@ def test_feedback(mock_client: langsmith.Client, test_client) -> None:
         key="human-feedback-stars",
         score=0.8,
     )
+
+
+def test_feedback_without_langsmith_key(test_client) -> None:
+    body = {
+        "run_id": "847c6285-8fc9-4560-a83f-4e6285809254",
+        "key": "human-feedback-stars",
+        "score": 0.8,
+    }
+    response = test_client.post("/feedback", json=body)
+    assert response.status_code == 200
+    assert response.json() == {"status": "success"}
 
 
 def test_history(test_client, mock_agent) -> None:

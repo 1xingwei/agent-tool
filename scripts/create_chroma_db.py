@@ -1,11 +1,18 @@
 import os
 import shutil
+import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader
+from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, TextLoader
+from langchain_core.embeddings import Embeddings
 from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from core.settings import settings
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -13,12 +20,15 @@ load_dotenv()
 
 def create_chroma_db(
     folder_path: str,
-    db_name: str = "./chroma_db",
-    delete_chroma_db: bool = True,
+    db_name: str | None = None,
+    delete_chroma_db: bool = False,
     chunk_size: int = 2000,
     overlap: int = 500,
+    embeddings: Embeddings | None = None,
 ):
-    embeddings = OpenAIEmbeddings(api_key=os.environ["OPENAI_API_KEY"])
+    db_name = db_name or settings.CHROMA_DIR
+    if embeddings is None:
+        embeddings = OpenAIEmbeddings(api_key=os.environ["OPENAI_API_KEY"])
 
     # Initialize Chroma vector store
     if delete_chroma_db and os.path.exists(db_name):
@@ -27,7 +37,7 @@ def create_chroma_db(
 
     chroma = Chroma(
         embedding_function=embeddings,
-        persist_directory=f"./{db_name}",
+        persist_directory=db_name,
     )
 
     # Initialize text splitter
@@ -38,11 +48,12 @@ def create_chroma_db(
         file_path = os.path.join(folder_path, filename)
 
         # Load document based on file extension
-        # Add more loaders if required, i.e. JSONLoader, TxtLoader, etc.
         if filename.endswith(".pdf"):
             loader = PyPDFLoader(file_path)
         elif filename.endswith(".docx"):
             loader = Docx2txtLoader(file_path)
+        elif filename.endswith((".md", ".txt")):
+            loader = TextLoader(file_path, encoding="utf-8")
         else:
             continue  # Skip unsupported file types
 
@@ -51,13 +62,7 @@ def create_chroma_db(
         chunks = text_splitter.split_documents(document)
 
         # Add chunks to Chroma vector store
-        for chunk in chunks:
-            chunk_id = chroma.add_documents([chunk])
-            if chunk_id:
-                print(f"Chunk added with ID: {chunk_id}")
-            else:
-                print("Failed to add chunk")
-
+        chroma.add_documents(chunks)
         print(f"Document {filename} added to database.")
 
     print(f"Vector database created and saved in {db_name}.")

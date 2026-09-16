@@ -13,7 +13,7 @@ def test_app_simple_non_streaming(mock_agent_client):
     """Test the full app - happy path"""
     at = AppTest.from_file("../../src/streamlit_app.py").run()
 
-    WELCOME_START = "Hello! I'm an AI agent. Ask me anything!"
+    WELCOME_START = "你好！我是一个 AI Agent，有什么想问的尽管说！"
     PROMPT = "Know any jokes?"
     RESPONSE = "Sure! Here's a joke:"
 
@@ -156,11 +156,11 @@ async def test_app_streaming(mock_agent_client):
     response = at.chat_message[1]
     tool_status = response.status[0]
     assert response.avatar == "assistant"
-    assert tool_status.label == "🛠️ Tool Call: calculator"
+    assert tool_status.label == "🛠️ 工具调用：calculator"
     assert tool_status.icon == ":material/check:"
-    assert tool_status.markdown[0].value == "Input:"
+    assert tool_status.markdown[0].value == "输入："
     assert tool_status.json[0].value == '{"expression": "6 * 7"}'
-    assert tool_status.markdown[1].value == "Output:"
+    assert tool_status.markdown[1].value == "输出："
     assert tool_status.markdown[2].value == "42"
     assert response.markdown[-1].value == "The answer is 42"
     assert not at.exception
@@ -182,7 +182,7 @@ async def test_app_init_error(mock_agent_client):
     assert at.chat_message[0].avatar == "assistant"
     assert at.chat_message[1].avatar == "user"
     assert at.chat_message[1].markdown[0].value == PROMPT
-    assert at.error[0].value == "Error generating response: Error connecting to agent"
+    assert at.error[0].value == "生成回复时出错：Error connecting to agent"
     assert not at.exception
 
 
@@ -386,10 +386,10 @@ async def test_app_streaming_single_sub_agent(mock_agent_client, multi_agent_mes
     )
     assert popover_1.proto.popover.label == "do_work_1"
     assert popover_1.proto.popover.icon == "🛠️"
-    assert popover_1.markdown[0].value == "**Tool:** do_work_1"
-    assert popover_1.markdown[1].value == "**Input:**"
+    assert popover_1.markdown[0].value == "**工具：**do_work_1"
+    assert popover_1.markdown[1].value == "**输入：**"
     assert '"my-arg": "value"' in popover_1.json[0].value
-    assert popover_1.markdown[2].value == "**Output:**"
+    assert popover_1.markdown[2].value == "**输出：**"
     assert popover_1.markdown[3].value == "Tool 1 complete"
 
     assert status_agent.children[2].value == "Starting tool 2...", (
@@ -457,10 +457,10 @@ async def test_app_streaming_sequential_sub_agents(mock_agent_client, multi_agen
     assert popover_a.type == "popover"
     assert popover_a.proto.popover.label == "do_work_1"
     assert popover_a.proto.popover.icon == "🛠️"
-    assert popover_a.markdown[0].value == "**Tool:** do_work_1"
-    assert popover_a.markdown[1].value == "**Input:**"
+    assert popover_a.markdown[0].value == "**工具：**do_work_1"
+    assert popover_a.markdown[1].value == "**输入：**"
     assert popover_a.json[0].value == '{"my-arg": "value"}'
-    assert popover_a.markdown[2].value == "**Output:**"
+    assert popover_a.markdown[2].value == "**输出：**"
     assert popover_a.markdown[3].value == "Tool 1 complete"
 
     assert ai_message.children[2].value == "Now transferring to agent C...", (
@@ -478,10 +478,10 @@ async def test_app_streaming_sequential_sub_agents(mock_agent_client, multi_agen
     assert popover_c.type == "popover"
     assert popover_c.proto.popover.label == "do_work_2"
     assert popover_c.proto.popover.icon == "🛠️"
-    assert popover_c.markdown[0].value == "**Tool:** do_work_2"
-    assert popover_c.markdown[1].value == "**Input:**"
+    assert popover_c.markdown[0].value == "**工具：**do_work_2"
+    assert popover_c.markdown[1].value == "**输入：**"
     assert popover_c.json[0].value == '{"my-arg-2": "value"}'
-    assert popover_c.markdown[2].value == "**Output:**"
+    assert popover_c.markdown[2].value == "**输出：**"
     assert popover_c.markdown[3].value == "Tool 2 complete"
 
     assert ai_message.children[4].value == "All agents have completed their tasks successfully.", (
@@ -547,10 +547,10 @@ async def test_app_streaming_nested_sub_agents(mock_agent_client, multi_agent_me
     assert popover_a.type == "popover"
     assert popover_a.proto.popover.label == "do_work_1"
     assert popover_a.proto.popover.icon == "🛠️"
-    assert popover_a.markdown[0].value == "**Tool:** do_work_1"
-    assert popover_a.markdown[1].value == "**Input:**"
+    assert popover_a.markdown[0].value == "**工具：**do_work_1"
+    assert popover_a.markdown[1].value == "**输入：**"
     assert popover_a.json[0].value == '{"my-arg": "value"}'
-    assert popover_a.markdown[2].value == "**Output:**"
+    assert popover_a.markdown[2].value == "**输出：**"
     assert popover_a.markdown[3].value == "Tool 1 complete"
 
     assert status_a.children[2].value == "Agent A delegating to agent B...", (
@@ -569,10 +569,10 @@ async def test_app_streaming_nested_sub_agents(mock_agent_client, multi_agent_me
     assert popover_b.type == "popover"
     assert popover_b.proto.popover.label == "do_work_2"
     assert popover_b.proto.popover.icon == "🛠️"
-    assert popover_b.markdown[0].value == "**Tool:** do_work_2"
-    assert popover_b.markdown[1].value == "**Input:**"
+    assert popover_b.markdown[0].value == "**工具：**do_work_2"
+    assert popover_b.markdown[1].value == "**输入：**"
     assert popover_b.json[0].value == '{"my-arg-2": "value"}'
-    assert popover_b.markdown[2].value == "**Output:**"
+    assert popover_b.markdown[2].value == "**输出：**"
     assert popover_b.markdown[3].value == "Tool 2 complete"
 
     assert ai_message.children[2].value == "All agents have completed their tasks successfully.", (
@@ -659,7 +659,7 @@ def test_app_thread_click_history_error(mock_agent_client, mock_threads_data):
 
     at.button(key="thread_thread-1111-2222").click().run()
 
-    assert any("Could not load that conversation." in error.value for error in at.error)
+    assert any("无法加载该对话。" in error.value for error in at.error)
     assert at.session_state.thread_id == original_thread_id
     assert not at.exception
 
@@ -672,5 +672,5 @@ def test_app_thread_fetch_error_shows_caption(mock_agent_client):
     at.query_params["user_id"] = "user-123"
     at.run()
 
-    assert any("Couldn't load conversation history" in caption.value for caption in at.caption)
+    assert any("无法加载对话历史" in caption.value for caption in at.caption)
     assert not at.exception
