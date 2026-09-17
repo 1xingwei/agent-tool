@@ -1,3 +1,8 @@
+# Runtime artifacts -- logs and local state are written outside the source tree
+# so the repo root stays readable. Both directories are created on demand.
+logs/
+var/
+
 # Streamlit and sqlite
 .streamlit/secrets.toml
 checkpoints.db

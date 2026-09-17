@@ -77,6 +77,11 @@ The repository is structured as follows:
 - `src/client/client.py`: Client to interact with the agent service
 - `src/streamlit_app.py`: Streamlit app providing a chat interface
 - `tests/`: Unit and integration tests
+- `docs/`: Provider and feature guides; project-specific notes live under `docs/notes/`
+- `scripts/`: Setup, smoke-test and local-start helpers
+- `docker/`: Dockerfiles and the optional MongoDB compose file
+- `data/`: Sample corpus used to build the Chroma index
+- `logs/`, `var/`: Runtime output and local state (gitignored, recreated on demand)
 
 ## Setup and Usage
 
@@ -197,6 +202,24 @@ You can also run the agent service and the Streamlit app locally without Docker,
    ```
 
 4. Open your browser and navigate to the URL provided by Streamlit (usually `http://localhost:8501`).
+
+#### Starting both processes on Windows
+
+`scripts/start.ps1` launches the service and the Streamlit app in the background, redirects their
+output into `logs/`, then waits until both ports answer before returning:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start.ps1
+```
+
+Runtime output is kept out of the source tree:
+
+| Path | Contents |
+|---|---|
+| `logs/` | `service*.log` and `streamlit*.log`, written by `scripts/start.ps1` |
+| `var/` | SQLite checkpoints, the long-term memory store, and the Chroma index — see `SQLITE_DB_PATH`, `SQLITE_STORE_PATH` and `CHROMA_DIR` |
+
+Both directories are gitignored and are recreated on demand, so a fresh clone does not need them.
 
 ## Projects built with or inspired by agent-service-toolkit
 

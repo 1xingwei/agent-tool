@@ -8,7 +8,7 @@ To create a Chroma database:
 
 1. Add the data you want to use to a folder, i.e. `./data`. Supported formats: `.md`, `.txt`, `.pdf`, `.docx`.
 2. Open [`create_chroma_db.py` file](../scripts/create_chroma_db.py) and set the folder_path variable to the path to your data i.e. `./data`.
-3. You can change the database name, chunk size and overlap size. The database path defaults to `settings.CHROMA_DIR` (`.env` key `CHROMA_DIR`), falling back to `./chroma_db`.
+3. You can change the database name, chunk size and overlap size. The database path defaults to `settings.CHROMA_DIR` (`.env` key `CHROMA_DIR`), falling back to `./var/chroma_db`.
 4. Assuming you have already followed the [Quickstart](../README.md#quickstart) and activated the virtual environment, to create the database run:
 
    ```sh
@@ -17,7 +17,7 @@ To create a Chroma database:
 
    Re-running is safe — existing data isn't deleted unless you pass `delete_chroma_db=True`.
 
-5. If successful, a Chroma db will be created in the repository root directory.
+5. If successful, a Chroma db will be created under `var/` (the directory holding local runtime state).
 
 ## Configuring the RAG assistant
 
