@@ -5,7 +5,20 @@ from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 from langgraph.types import StateSnapshot
 
+from core import settings
 from service import app
+
+
+@pytest.fixture(autouse=True)
+def _disable_auth_by_default(monkeypatch):
+    """Keep this suite independent of the developer's local .env.
+
+    Settings load AUTH_SECRET from .env, so a developer who has configured a
+    secret would otherwise see every unauthenticated request in these tests
+    return 401. Auth behaviour itself is covered by test_auth.py, which sets the
+    secret explicitly.
+    """
+    monkeypatch.setattr(settings, "AUTH_SECRET", None)
 
 
 @pytest.fixture

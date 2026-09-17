@@ -29,6 +29,20 @@ APP_ICON = "🧰"
 USER_ID_COOKIE = "user_id"
 
 
+def tool_calls_visible() -> bool:
+    """Whether tool calls should be rendered in the chat.
+
+    Tool calls are an implementation detail: the user asked a question and wants the
+    answer, not the machinery behind it. So they stay hidden by default and are only
+    drawn when the sidebar toggle opts in (useful for debugging and demos).
+
+    Sub-agent transfers follow the same switch. They arrive as tool calls too, and a
+    raw name like ``transfer_to_research_expert`` is no more meaningful to a user than
+    any other internal function name.
+    """
+    return bool(st.session_state.get("show_tool_calls", False))
+
+
 def get_or_create_user_id() -> str:
     """Get the user ID from session state or URL parameters, or create a new one if it doesn't exist."""
     # Check if user_id exists in session state
@@ -215,6 +229,15 @@ async def main() -> None:
                 ),
                 key="enable_audio",
             )
+            # Tool calls are implementation detail, so they stay hidden unless the
+            # user opts in. See tool_calls_visible() and draw_messages().
+            st.toggle(
+                "显示工具调用",
+                value=False,
+                key="show_tool_calls",
+                help="仅供调试与演示：开启后展示每次工具调用、子 Agent 转交的输入与输出；"
+                "关闭时只显示最终回复",
+            )
 
             # Display user ID (for debugging or user information)
             st.text_input("用户 ID（只读）", value=user_id, disabled=True)
@@ -379,8 +402,11 @@ async def draw_messages(
 
     This function has additional logic to handle streaming tokens and tool calls.
     - Use a placeholder container to render streaming tokens as they arrive.
-    - Use a status container to render tool calls. Track the tool inputs and outputs
-      and update the status container accordingly.
+    - Use a status container to render tool calls, but only when the user opted into
+      seeing them (see tool_calls_visible()). Track the tool inputs and outputs and
+      update the status container accordingly. Calls that stay hidden are still read
+      off the stream so the messages keep their alignment, and a transient hint
+      stands in for them while they run.
 
     The function also needs to track the last message container in session state
     since later messages can draw to the same container. This is also used for
@@ -450,35 +476,62 @@ async def draw_messages(
                             st.write(msg.content)
 
                     if msg.tool_calls:
-                        # Create a status container for each tool call and store the
-                        # status container by ID to ensure results are mapped to the
-                        # correct status container.
-                        call_results = {}
-                        for tool_call in msg.tool_calls:
-                            # Use different labels for transfer vs regular tool calls
-                            if "transfer_to" in tool_call["name"]:
-                                label = f"""💼 子 Agent：{tool_call["name"]}"""
-                            else:
-                                label = f"""🛠️ 工具调用：{tool_call["name"]}"""
+                        # Tool calls and sub-agent transfers are both implementation
+                        # detail, so they share one switch and are hidden by default.
+                        # With the details hidden the calls still have to be consumed
+                        # below, otherwise the stream would fall out of alignment.
+                        details = tool_calls_visible()
+                        transfers = [tc for tc in msg.tool_calls if "transfer_to" in tc["name"]]
+                        regular_calls = [
+                            tc for tc in msg.tool_calls if "transfer_to" not in tc["name"]
+                        ]
+                        status_state = "running" if is_new else "complete"
 
-                            status = st.status(
-                                label,
-                                state="running" if is_new else "complete",
-                            )
-                            call_results[tool_call["id"]] = status
+                        # Track the status container for each tool call by ID so results
+                        # are mapped back to the correct container.
+                        call_results = {}
+                        if details:
+                            for tool_call in transfers:
+                                call_results[tool_call["id"]] = st.status(
+                                    f"""💼 子 Agent：{tool_call["name"]}""",
+                                    state=status_state,
+                                )
+
+                            if regular_calls:
+                                # One container per message rather than one per call, so
+                                # a turn with several lookups still reads as a single row.
+                                if len(regular_calls) == 1:
+                                    label = f"""🛠️ 工具调用：{regular_calls[0]["name"]}"""
+                                else:
+                                    label = f"🛠️ 工具调用（{len(regular_calls)}）"
+                                aggregate = st.status(label, state=status_state, type="compact")
+                                for tool_call in regular_calls:
+                                    call_results[tool_call["id"]] = aggregate
+
+                        # With the details hidden there is nothing to watch while the
+                        # tools run, so show a transient hint instead of leaving the
+                        # message looking stalled. It is cleared once they return.
+                        running_hint = st.empty() if is_new and not details else None
+                        if running_hint:
+                            running_hint.caption(":material/progress_activity: 正在处理…")
 
                         # Expect one ToolMessage for each tool call.
                         for tool_call in msg.tool_calls:
                             if "transfer_to" in tool_call["name"]:
-                                status = call_results[tool_call["id"]]
-                                status.update(expanded=True)
+                                status = call_results.get(tool_call["id"])
+                                if status is not None:
+                                    status.update(expanded=True)
                                 await handle_sub_agent_msgs(messages_agen, status, is_new)
                                 break
 
-                            # Only non-transfer tool calls reach this point
-                            status = call_results[tool_call["id"]]
-                            status.write("输入：")
-                            status.write(tool_call["args"])
+                            # Only non-transfer tool calls reach this point. The result
+                            # must be consumed even when the call is not displayed.
+                            status = call_results.get(tool_call["id"])
+                            if status is not None:
+                                if len(regular_calls) > 1:
+                                    status.write(f"**{tool_call['name']}**")
+                                status.write("输入：")
+                                status.write(tool_call["args"])
                             tool_result: ChatMessage = await anext(messages_agen)
 
                             if tool_result.type != "tool":
@@ -490,11 +543,16 @@ async def draw_messages(
                             # status container with the result
                             if is_new:
                                 st.session_state.messages.append(tool_result)
+                            if status is None:
+                                continue
                             if tool_result.tool_call_id:
-                                status = call_results[tool_result.tool_call_id]
+                                status = call_results.get(tool_result.tool_call_id, status)
                             status.write("输出：")
                             status.write(tool_result.content)
                             status.update(state="complete")
+
+                        if running_hint:
+                            running_hint.empty()
 
             case "custom":
                 # CustomData example used by the bg-task-agent
@@ -566,9 +624,14 @@ async def handle_sub_agent_msgs(messages_agen, status, is_new):
 
     Enhanced to support nested multi-agent hierarchies with handoff back messages.
 
+    When tool calls are hidden the caller passes ``status=None``: the sub-agent
+    messages are still consumed so the stream keeps its alignment, they are just not
+    drawn.
+
     Args:
         messages_agen: Async generator of messages
-        status: the status container for the current agent
+        status: the status container for the current agent, or None when tool calls
+            are hidden
         is_new: Whether messages are new or replayed
     """
     nested_popovers = {}
@@ -635,7 +698,11 @@ async def handle_sub_agent_msgs(messages_agen, status, is_new):
                         # Recursively handle sub-agents of this sub-agent
                         await handle_sub_agent_msgs(messages_agen, nested_status, is_new)
                     else:
-                        # Regular tool call - create popover
+                        # Regular tool calls are hidden unless the sidebar opts in. The
+                        # matching tool result is still read by the loop above, it just
+                        # is not drawn, so skipping the popover keeps the stream aligned.
+                        if not tool_calls_visible():
+                            continue
                         popover = status.popover(f"{tc['name']}", icon="🛠️")
                         popover.write(f"**工具：**{tc['name']}")
                         popover.write("**输入：**")

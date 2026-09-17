@@ -150,6 +150,7 @@ async def test_app_streaming(mock_agent_client):
     mock_agent_client.astream = Mock(return_value=amessage_iter())
 
     at.toggle[0].set_value(True)  # Use Streaming = True
+    at.toggle[2].set_value(True)  # Show tool calls (hidden by default)
     at.chat_input[0].set_value(PROMPT).run()
     print(at)
 
@@ -165,6 +166,148 @@ async def test_app_streaming(mock_agent_client):
     assert tool_status.markdown[1].value == "输出："
     assert tool_status.markdown[2].value == "42"
     assert response.markdown[-1].value == "The answer is 42"
+    assert not at.exception
+
+
+@pytest.mark.asyncio
+async def test_app_hides_tool_calls_by_default(mock_agent_client):
+    """Tool calls are implementation detail and stay out of the transcript."""
+    at = AppTest.from_file("../../src/streamlit_app.py", default_timeout=10).run()
+
+    PROMPT = "What is 6 * 7?"
+    ai_with_tool = ChatMessage(
+        type="ai",
+        content="",
+        tool_calls=[{"name": "calculator", "id": "test_call_id", "args": {"expression": "6 * 7"}}],
+    )
+    tool_message = ChatMessage(type="tool", content="42", tool_call_id="test_call_id")
+    final_ai_message = ChatMessage(type="ai", content="The answer is 42")
+
+    async def amessage_iter() -> AsyncGenerator[ChatMessage, None]:
+        for m in [ai_with_tool, tool_message, final_ai_message]:
+            yield m
+
+    mock_agent_client.astream = Mock(return_value=amessage_iter())
+
+    at.toggle[0].set_value(True)  # Use Streaming = True, leave tool calls hidden
+    at.chat_input[0].set_value(PROMPT).run()
+
+    response = at.chat_message[1]
+    assert len(response.status) == 0, "Tool calls must not be rendered by default"
+    assert response.markdown[-1].value == "The answer is 42"
+    assert not at.exception
+
+
+@pytest.mark.asyncio
+async def test_app_aggregates_multiple_tool_calls(mock_agent_client):
+    """Several calls in one turn collapse into a single container, not one each."""
+    at = AppTest.from_file("../../src/streamlit_app.py", default_timeout=10).run()
+
+    PROMPT = "Compare two things"
+    ai_with_tools = ChatMessage(
+        type="ai",
+        content="",
+        tool_calls=[
+            {"name": "web_search", "id": "call-1", "args": {"query": "a"}},
+            {"name": "web_search", "id": "call-2", "args": {"query": "b"}},
+        ],
+    )
+    first_result = ChatMessage(type="tool", content="result 1", tool_call_id="call-1")
+    second_result = ChatMessage(type="tool", content="result 2", tool_call_id="call-2")
+    final_ai_message = ChatMessage(type="ai", content="Here is the comparison")
+
+    async def amessage_iter() -> AsyncGenerator[ChatMessage, None]:
+        for m in [ai_with_tools, first_result, second_result, final_ai_message]:
+            yield m
+
+    mock_agent_client.astream = Mock(return_value=amessage_iter())
+
+    at.toggle[0].set_value(True)  # Use Streaming = True
+    at.toggle[2].set_value(True)  # Show tool calls
+    at.chat_input[0].set_value(PROMPT).run()
+
+    response = at.chat_message[1]
+    assert len(response.status) == 1, "Tool calls in one turn should share a container"
+    assert response.status[0].label == "🛠️ 工具调用（2）"
+    assert response.markdown[-1].value == "Here is the comparison"
+    assert not at.exception
+
+
+@pytest.mark.asyncio
+async def test_app_hides_sub_agent_tools_by_default(mock_agent_client):
+    """Sub-agent transfers and the tool calls inside them are hidden as well.
+
+    These arrive through handle_sub_agent_msgs(), a separate rendering path from the
+    top-level tool calls, so they need their own coverage.
+    """
+    at = AppTest.from_file("../../src/streamlit_app.py", default_timeout=10).run()
+
+    PROMPT = "Research this for me"
+    transfer = ChatMessage(
+        type="ai",
+        content="",
+        tool_calls=[
+            {
+                "name": "transfer_to_research_expert",
+                "id": "transfer-1",
+                "args": {"task": "research"},
+            }
+        ],
+    )
+    transfer_success = ChatMessage(
+        type="tool",
+        content="Successfully transferred via transfer_to_research_expert",
+        tool_call_id="transfer-1",
+    )
+    sub_tool = ChatMessage(
+        type="ai",
+        content="",
+        tool_calls=[{"name": "web_search", "id": "search-1", "args": {"query": "secret"}}],
+    )
+    sub_tool_result = ChatMessage(type="tool", content="search results", tool_call_id="search-1")
+    transfer_back = ChatMessage(
+        type="ai",
+        content="",
+        tool_calls=[
+            {
+                "name": "transfer_back_to_supervisor",
+                "id": "back-1",
+                "args": {"result": "done"},
+            }
+        ],
+    )
+    transfer_back_success = ChatMessage(
+        type="tool",
+        content="Successfully transferred back via transfer_back_to_supervisor",
+        tool_call_id="back-1",
+    )
+    final = ChatMessage(type="ai", content="Here is the research summary")
+
+    async def amessage_iter() -> AsyncGenerator[ChatMessage, None]:
+        for m in [
+            transfer,
+            transfer_success,
+            sub_tool,
+            sub_tool_result,
+            transfer_back,
+            transfer_back_success,
+            final,
+        ]:
+            yield m
+
+    mock_agent_client.astream = Mock(return_value=amessage_iter())
+
+    at.toggle[0].set_value(True)  # Use Streaming = True, leave tool calls hidden
+    at.chat_input[0].set_value(PROMPT).run()
+
+    response = at.chat_message[1]
+    assert len(response.status) == 0, "Sub-agent transfers must not be rendered by default"
+    assert response.markdown[-1].value == "Here is the research summary"
+
+    transcript = " ".join(m.value for m in response.markdown)
+    assert "transfer_to" not in transcript, "Sub-agent transfers must not leak into the transcript"
+    assert "web_search" not in transcript, "Tool names must not leak into the transcript"
+    assert "search results" not in transcript, "Tool output must not leak into the transcript"
     assert not at.exception
 
 
@@ -366,6 +509,7 @@ async def test_app_streaming_single_sub_agent(mock_agent_client, multi_agent_mes
     mock_agent_client.astream = Mock(return_value=amessage_iter())
 
     at.toggle[0].set_value(True)
+    at.toggle[2].set_value(True)  # Show tool calls (hidden by default)
     at.chat_input[0].set_value(PROMPT).run()
 
     ai_message = at.chat_message[1]
@@ -439,6 +583,7 @@ async def test_app_streaming_sequential_sub_agents(mock_agent_client, multi_agen
     mock_agent_client.astream = Mock(return_value=amessage_iter())
 
     at.toggle[0].set_value(True)
+    at.toggle[2].set_value(True)  # Show tool calls (hidden by default)
     at.chat_input[0].set_value(PROMPT).run()
 
     ai_message = at.chat_message[1]
@@ -529,6 +674,7 @@ async def test_app_streaming_nested_sub_agents(mock_agent_client, multi_agent_me
     mock_agent_client.astream = Mock(return_value=amessage_iter())
 
     at.toggle[0].set_value(True)
+    at.toggle[2].set_value(True)  # Show tool calls (hidden by default)
     at.chat_input[0].set_value(PROMPT).run()
 
     ai_message = at.chat_message[1]
