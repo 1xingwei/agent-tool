@@ -15,11 +15,10 @@ def _git(repo_path: str, args: list[str]) -> str:
         cwd=repo_path,
         capture_output=True,
         text=True,
-        # Without an explicit encoding, text mode decodes with
-        # locale.getpreferredencoding() -- cp936 on a Windows service process. Git
-        # emits UTF-8, so a non-ASCII commit message raises UnicodeDecodeError in
-        # the reader thread, which leaves stdout as None and turns the caller's
-        # .strip() into an AttributeError (see docs/notes/project_audit.md).
+        # 未显式指定编码时，文本模式会用 locale.getpreferredencoding() 解码——
+        # 在 Windows 服务进程中即为 cp936。Git 输出 UTF-8，因此非 ASCII 的提交信息
+        # 会在读取线程中抛出 UnicodeDecodeError，使 stdout 变成 None，
+        # 调用方的 .strip() 于是抛出 AttributeError（见 docs/10-审核与修复总账.md）。
         encoding="utf-8",
         errors="replace",
         timeout=30,
@@ -32,7 +31,7 @@ def _git(repo_path: str, args: list[str]) -> str:
 
 @cache
 def _repo_root(repo_path: str) -> Path:
-    """Resolve repo_path (file or dir) to the repo root; raise if not a git repo."""
+    """将 repo_path（文件或目录）解析为仓库根目录；若不是 git 仓库则抛出异常。"""
     path = Path(repo_path).resolve()
     if path.is_file():
         path = path.parent
@@ -46,14 +45,14 @@ def _repo_root(repo_path: str) -> Path:
 
 @tool
 def git_log(repo_path: str = str(DEFAULT_REPO), max_count: int = 20) -> str:
-    """List recent commit history of a git repository with per-commit change stats.
+    """列出 git 仓库的近期提交历史，并附带每次提交的变更统计。
 
     Args:
-        repo_path: Path to a file or directory inside the git repository.
-        max_count: Maximum number of commits to return.
+        repo_path: git 仓库内文件或目录的路径。
+        max_count: 返回的最大提交数。
 
     Returns:
-        One line per commit: hash, author date, subject, and number of files changed.
+        每次提交一行：hash、作者日期、主题以及变更文件数。
     """
     root = _repo_root(repo_path)
     out = _git(
@@ -76,14 +75,14 @@ def git_log(repo_path: str = str(DEFAULT_REPO), max_count: int = 20) -> str:
 
 @tool
 def git_diff(repo_path: str = str(DEFAULT_REPO), ref: str = "HEAD") -> str:
-    """Show the full diff of a commit (or of working-tree changes vs a ref).
+    """显示某次提交的完整 diff（或工作区变更相对于某个 ref 的 diff）。
 
     Args:
-        repo_path: Path to a file or directory inside the git repository.
-        ref: Commit hash/ref to show. Defaults to HEAD.
+        repo_path: git 仓库内文件或目录的路径。
+        ref: 要显示的提交 hash/ref。默认为 HEAD。
 
     Returns:
-        The complete diff output (respecting git's pager/length limits).
+        完整的 diff 输出（遵循 git 的分页/长度限制）。
     """
     root = _repo_root(repo_path)
     return _git(str(root), ["show", "--format=%h %ad %s%n", "--date=short", ref])
@@ -96,16 +95,16 @@ def file_search(
     content_pattern: str = "",
     max_results: int = 20,
 ) -> str:
-    """Search a repository for files by name and/or content.
+    """按名称和/或内容在仓库中搜索文件。
 
     Args:
-        repo_path: Path to a file or directory inside the git repository.
-        name_pattern: Regex matched against file paths (empty to skip).
-        content_pattern: Regex matched against file contents (empty to skip).
-        max_results: Maximum number of matches to return.
+        repo_path: git 仓库内文件或目录的路径。
+        name_pattern: 与文件路径匹配的正则（为空则跳过）。
+        content_pattern: 与文件内容匹配的正则（为空则跳过）。
+        max_results: 返回的最大匹配数。
 
     Returns:
-        Matching paths, suffixed with the matching content line when content_pattern is set.
+        匹配的路径，当设置了 content_pattern 时附加匹配的内容行。
     """
     root = _repo_root(repo_path)
     name_re = re.compile(name_pattern) if name_pattern else None
@@ -137,15 +136,15 @@ def file_search(
 
 @tool
 def read_file(repo_path: str = str(DEFAULT_REPO), path: str = "", max_chars: int = 8000) -> str:
-    """Read a file from the repository, truncated to avoid overflowing context.
+    """从仓库中读取文件，并截断以避免上下文溢出。
 
     Args:
-        repo_path: Path to a file or directory inside the git repository.
-        path: The file to read, relative to the repository root.
-        max_chars: Maximum characters to return.
+        repo_path: git 仓库内文件或目录的路径。
+        path: 要读取的文件，相对于仓库根目录。
+        max_chars: 返回的最大字符数。
 
     Returns:
-        The file content, truncated indicatically if longer than max_chars.
+        文件内容，若超过 max_chars 则截断并留下截断标记。
     """
     root = _repo_root(repo_path)
     if ".." in Path(path).parts:

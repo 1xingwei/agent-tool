@@ -31,7 +31,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    # Volume mount of development-only credentials since compose watch doesn't sync ignored files and doesn't do initial sync when the service starts
+    # 挂载仅用于开发的凭据卷，因为 compose watch 不会同步被忽略的文件，也不会在服务启动时进行初始同步
     volumes:
       - ./privatecredentials:/privatecredentials
     develop:

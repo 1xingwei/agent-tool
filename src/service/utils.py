@@ -17,7 +17,7 @@ from schema import ChatMessage
 
 
 def ensure_model_available(model: Any) -> None:
-    """Raise 400 if `model` isn't in the operator's AVAILABLE_MODELS allowlist."""
+    """如果 `model` 不在运维方的 AVAILABLE_MODELS 允许列表中，则抛出 400。"""
     if model not in settings.AVAILABLE_MODELS:
         raise HTTPException(
             status_code=400,
@@ -40,7 +40,7 @@ def convert_message_content_to_string(content: str | list[str | dict]) -> str:
 
 
 def langchain_to_chat_message(message: BaseMessage) -> ChatMessage:
-    """Create a ChatMessage from a LangChain message."""
+    """从 LangChain 消息创建 ChatMessage。"""
     match message:
         case HumanMessage():
             human_message = ChatMessage(
@@ -80,11 +80,11 @@ def langchain_to_chat_message(message: BaseMessage) -> ChatMessage:
 
 
 def messages_from_checkpoint(checkpoint: Mapping[str, Any]) -> list[BaseMessage]:
-    """Extract a thread's conversation from a raw checkpoint.
+    """从原始 checkpoint 中提取 thread 的对话。
 
-    Graph-state agents keep the conversation in the `messages` channel. Functional-API
-    (`@entrypoint`) agents keep it in `__previous__` instead, which `aget_state` does not
-    surface - it only returns the entrypoint's final value.
+    图状态 agent 将对话保存在 `messages` 通道中。Functional-API
+    （`@entrypoint`）agent 则将其保存在 `__previous__` 中，而 `aget_state` 不会
+    暴露它——它只返回 entrypoint 的最终值。
     """
     channel_values = checkpoint.get("channel_values") or {}
     messages = channel_values.get("messages")
@@ -98,10 +98,10 @@ def messages_from_checkpoint(checkpoint: Mapping[str, Any]) -> list[BaseMessage]
 
 
 def remove_tool_calls(content: str | list[str | dict]) -> str | list[str | dict]:
-    """Remove tool calls from content."""
+    """从内容中移除工具调用。"""
     if isinstance(content, str):
         return content
-    # Currently only Anthropic models stream tool calls, using content item type tool_use.
+    # 目前只有 Anthropic 模型会流式返回工具调用，使用内容项类型 tool_use。
     return [
         content_item
         for content_item in content

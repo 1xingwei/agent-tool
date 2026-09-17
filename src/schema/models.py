@@ -30,7 +30,7 @@ class OpenAIModelName(StrEnum):
 class AzureOpenAIModelName(StrEnum):
     """https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure"""
 
-    # Values double as Azure deployment names / required_models keys; renaming breaks existing deployment maps.
+    # 这些值同时用作 Azure 部署名 / required_models 键；重命名会破坏现有部署映射。
     AZURE_GPT_5 = "azure-gpt-5"
     AZURE_GPT_5_MINI = "azure-gpt-5-mini"
 
@@ -59,22 +59,22 @@ class GoogleModelName(StrEnum):
     GEMINI_36_FLASH = "gemini-3.6-flash"
     GEMINI_37_FLASH = "gemini-3.7-flash"
     GEMINI_38_FLASH = "gemini-3.8-flash"
-    # gemini-3-pro-preview was shut down 2026-03-09; 3.1 is the current preview-tier pro model.
+    # gemini-3-pro-preview 已于 2026-03-09 下线；3.1 是当前 preview 层级的 pro 模型。
     GEMINI_31_PRO_PREVIEW = "gemini-3.1-pro-preview"
 
 
 class VertexAIModelName(StrEnum):
     """https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models"""
 
-    # The models/ prefix keeps every value distinct from its GoogleModelName twin;
-    # Vertex resolves it to the same resource path as the bare name.
+    # models/ 前缀使每个值都与其 GoogleModelName 对应值不同；
+    # Vertex 会将其解析为与裸名称相同的资源路径。
     GEMINI_31_FLASH_LITE = "models/gemini-3.1-flash-lite"
     GEMINI_35_FLASH = "models/gemini-3.5-flash"
     GEMINI_35_FLASH_LITE = "models/gemini-3.5-flash-lite"
     GEMINI_36_FLASH = "models/gemini-3.6-flash"
     GEMINI_37_FLASH = "models/gemini-3.7-flash"
     GEMINI_38_FLASH = "models/gemini-3.8-flash"
-    # gemini-3-pro-preview was shut down 2026-03-09; 3.1 is the current preview-tier pro model.
+    # gemini-3-pro-preview 已于 2026-03-09 下线；3.1 是当前 preview 层级的 pro 模型。
     GEMINI_31_PRO_PREVIEW = "models/gemini-3.1-pro-preview"
 
 
@@ -89,7 +89,7 @@ class GroqModelName(StrEnum):
 class AWSModelName(StrEnum):
     """https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html"""
 
-    # Values are global cross-region inference profile IDs; latest Claude on Bedrock rejects bare on-demand model IDs. Single-region deployments may need a us./eu. prefix instead.
+    # 这些值是全局跨区域推理配置文件 ID；Bedrock 上最新的 Claude 拒绝裸按需模型 ID。单区域部署可能需要改用 us./eu. 前缀。
     BEDROCK_HAIKU = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
     BEDROCK_SONNET = "global.anthropic.claude-sonnet-5"
 
@@ -116,7 +116,7 @@ class OpenAICompatibleName(StrEnum):
 
 
 class FakeModelName(StrEnum):
-    """Fake model for testing."""
+    """用于测试的假模型。"""
 
     FAKE = "fake"
 

@@ -60,8 +60,8 @@ dependencies = [
     "ag-ui-langgraph~=0.0.42",
 ]
 
-# Supply-chain cooldown: resolution only considers releases >=14 days old. Needs the
-# repo's pinned uv version (older uv ignores this and strips it from uv.lock on re-lock).
+# 供应链冷却期：解析时仅考虑发布满 14 天的版本。需要
+# 仓库固定的 uv 版本（旧版 uv 会忽略此项并在重新 lock 时将其从 uv.lock 中移除）。
 [tool.uv]
 exclude-newer = "14 days"
 
@@ -78,9 +78,9 @@ dev = [
     "pymarkdownlnt",
 ]
 
-# Group for the minimal dependencies to run just the client and Streamlit app.
-# These are also installed in the default dependencies.
-# To install run: `uv sync --frozen --only-group client`
+# 仅运行客户端和 Streamlit 应用所需的最小依赖组。
+# 这些依赖也会安装在默认依赖中。
+# 安装命令：`uv sync --frozen --only-group client`
 client = [
     "httpx~=0.28.1",
     "pydantic ~=2.13.4",
@@ -97,20 +97,23 @@ extend-select = ["I", "U"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "scripts"]
+# 只在 tests/ 下收集用例。var/ 是 gitignore 的临时目录，会放下载来的
+# 第三方仓库副本与探针脚本；不加这一行，裸跑 pytest 会把它们的测试一起收进来。
+testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.pytest_env]
 OPENAI_API_KEY = "sk-fake-openai-key"
 
 [tool.pymarkdown]
-# Docs use long, unwrapped prose lines rather than hard-wrapping at a fixed
-# column, so line length isn't enforced.
+# 文档使用长而不换行的散文行，而非在固定列处硬换行，
+# 因此不强制行长限制。
 plugins.md013.enabled = false
-# Inline HTML (e.g. <img> with width=) is used intentionally in README.md.
+# README.md 中刻意使用了内联 HTML（例如带 width= 的 <img>）。
 plugins.md033.enabled = false
-# Not every doc needs to start with a top-level heading.
+# 并非每个文档都需要以顶级标题开头。
 plugins.md041.enabled = false
-# Allow repeated heading text as long as it's not adjacent siblings.
+# 允许重复的标题文本，只要它们不是相邻的兄弟节点。
 plugins.md024.siblings_only = true
 
 [tool.pyrefly]
@@ -119,7 +122,7 @@ project-excludes = ["src/streamlit_app.py"]
 preset = "default"
 
 [tool.pyrefly.errors]
-# LangGraph's StateGraph(state_schema) generic bound rejects MessagesState
-# subclasses, so this fires on every agent's StateGraph(AgentState). It's a gap
-# in LangGraph's typing, not a real error, so disable it project-wide.
+# LangGraph 的 StateGraph(state_schema) 泛型约束会拒绝 MessagesState
+# 的子类，因此每个 agent 的 StateGraph(AgentState) 都会触发此警告。这是
+# LangGraph 类型标注的缺陷，而非真正的错误，因此在项目范围内禁用。
 bad-specialization = false

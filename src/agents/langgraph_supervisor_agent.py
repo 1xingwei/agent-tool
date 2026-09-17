@@ -6,18 +6,18 @@ from langgraph_supervisor import create_supervisor
 from agents.tools import web_search
 from core import get_supervisor_model, settings
 
-# Handoffs stitch sub-agent answers into this graph's history, which DeepSeek's
-# thinking mode rejects -- get_supervisor_model documents why.
+# Handoffs 会将子 agent 的回答拼接进此图的历史记录，而 DeepSeek 的
+# thinking 模式会拒绝这种内容——get_supervisor_model 的文档说明了原因。
 model = get_supervisor_model(settings.DEFAULT_MODEL)
 
 
 def add(a: float, b: float) -> float:
-    """Add two numbers."""
+    """将两个数相加。"""
     return a + b
 
 
 def multiply(a: float, b: float) -> float:
-    """Multiply two numbers."""
+    """将两个数相乘。"""
     return a * b
 
 
@@ -36,7 +36,7 @@ research_agent: Any = create_agent(
 ).with_config(tags=["skip_stream"])
 
 
-# Create supervisor workflow
+# 创建 supervisor 工作流
 workflow = create_supervisor(
     [research_agent, math_agent],
     model=model,
@@ -46,8 +46,8 @@ workflow = create_supervisor(
         "For math problems, use math_agent."
     ),
     add_handoff_back_messages=True,
-    # UI now expects this to be True so we don't have to guess when a handoff back occurs
-    output_mode="full_history",  # otherwise when reloading conversations, the sub-agents' messages are not included
+    # UI 现在期望此值为 True，这样我们无需猜测何时发生 handoff 返回
+    output_mode="full_history",  # 否则在重新加载对话时，子 agent 的消息不会被包含
 )
 
 langgraph_supervisor_agent = workflow.compile()

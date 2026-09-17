@@ -8,17 +8,17 @@ from service.service import _create_ai_message
 @pytest.mark.parametrize(
     "parts, expected",
     [
-        # 1) Basic content + tool_calls
+        # 1) 基本内容 + tool_calls
         (
             {"content": "Hello", "tool_calls": []},
             {"content": "Hello", "tool_calls": []},
         ),
-        # 2) Unknown keys are ignored
+        # 2) 未知键被忽略
         (
             {"content": "Test", "foobar": 123, "tool_calls": []},
             {"content": "Test", "tool_calls": []},
         ),
-        # 3) Extra valid AIMessage params (id, type) pass through
+        # 3) 额外的合法 AIMessage 参数（id、type）透传
         (
             {
                 "content": "Hey",
@@ -32,10 +32,10 @@ from service.service import _create_ai_message
 )
 def test_create_ai_message_filters_and_passes_through(parts, expected):
     """
-    _create_ai_message should:
-      - Drop unknown keys ("foobar")
-      - Preserve keys that match AIMessage signature
-      - Use the final value for duplicate keys in the parts dict
+    _create_ai_message 应当：
+      - 丢弃未知键（"foobar"）
+      - 保留与 AIMessage 签名匹配的键
+      - 对 parts 字典中的重复键使用最终值
     """
     msg: AIMessage = _create_ai_message(parts)
     for key, val in expected.items():
@@ -44,13 +44,13 @@ def test_create_ai_message_filters_and_passes_through(parts, expected):
 
 def test_create_ai_message_missing_required_content_raises():
     """
-    AIMessage requires 'content'; if missing, _create_ai_message should
-    raise a pydantic ValidationError from the constructor.
+    AIMessage 要求 'content'；若缺失，_create_ai_message 应当
+    从构造函数抛出 pydantic ValidationError。
 
-    LANGCHAIN V1 MIGRATION NOTE:
-    - Previously raised TypeError for missing required arguments
-    - In langchain v1 with Pydantic v2, validation errors are now pydantic_core.ValidationError
-    - This is more explicit about what failed (validation) vs generic TypeError
+    LANGCHAIN V1 迁移说明：
+    - 此前对缺失的必需参数抛出 TypeError
+    - 在 langchain v1 与 Pydantic v2 中，验证错误现在是 pydantic_core.ValidationError
+    - 这更明确地指出失败原因（验证）而非泛化的 TypeError
     """
     with pytest.raises(ValidationError):
         _create_ai_message({"tool_calls": []})
@@ -58,12 +58,12 @@ def test_create_ai_message_missing_required_content_raises():
 
 def test_create_ai_message_empty_dict_raises():
     """
-    Completely empty parts should also fail to construct an AIMessage,
-    raising a pydantic ValidationError.
+    完全空的 parts 同样应无法构造 AIMessage，
+    抛出 pydantic ValidationError。
 
-    LANGCHAIN V1 MIGRATION NOTE:
-    - Exception type changed from TypeError to pydantic_core.ValidationError
-    - Reflects the shift to Pydantic v2 for model validation in langchain_core
+    LANGCHAIN V1 迁移说明：
+    - 异常类型从 TypeError 变为 pydantic_core.ValidationError
+    - 反映了 langchain_core 转向使用 Pydantic v2 进行模型验证
     """
     with pytest.raises(ValidationError):
         _create_ai_message({})

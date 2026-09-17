@@ -1,45 +1,44 @@
-"""Browser end-to-end scenarios for the Streamlit app UI.
+"""Streamlit 应用 UI 的浏览器端到端场景。
 
-Extends ``scripts/smoke_live_app.py`` (a single chat round-trip) with a small
-suite covering the key user journeys that Streamlit version bumps or client /
-schema changes have quietly broken before. It drives a real browser through the
-app the same way a user would, so it catches breakage that the pytest suite
-(which mocks the transport) and the docker CI health checks cannot.
+扩展 ``scripts/smoke_live_app.py``（单次聊天往返），加入一小组
+覆盖关键用户旅程的用例，这些旅程曾因 Streamlit 版本升级或客户端 /
+schema 变更而被悄悄破坏。它像用户一样驱动真实浏览器走完
+应用，因此能捕获 pytest 套件（mock 了传输层）和 docker CI 健康检查
+无法发现的破坏。
 
-Usage:
+用法：
     uv run --with playwright python scripts/e2e_ui_tests.py [URL] [scenario ...]
 
-Run everything (the default), or only named scenarios:
-    uv run --with playwright python scripts/e2e_ui_tests.py            # all, vs localhost
+运行全部（默认），或仅运行指定场景：
+    uv run --with playwright python scripts/e2e_ui_tests.py            # 全部，针对 localhost
     uv run --with playwright python scripts/e2e_ui_tests.py chat feedback
     uv run --with playwright python scripts/e2e_ui_tests.py https://my-app.example.com
     uv run --with playwright python scripts/e2e_ui_tests.py --list
 
-The scenarios don't hardcode an app URL - they take it as an argument - so the
-same suite works against any deployment. It defaults to a locally running app
-(http://localhost:8501); pass a different URL (or set ``LIVE_APP_URL``) to point
-it at a deployed one. So one suite serves both: run it against a local
-``USE_FAKE_MODEL=true`` service + ``streamlit run`` before a PR, and against the
-deployed URL to check production.
+场景不硬编码应用 URL——而是将其作为参数传入——因此同一套件
+可用于任何部署。默认指向本地运行的应用
+（http://localhost:8501）；传入不同 URL（或设置 ``LIVE_APP_URL``）即可指向
+已部署的实例。因此一套套件两用：PR 前针对本地
+``USE_FAKE_MODEL=true`` 服务 + ``streamlit run`` 运行，针对
+已部署 URL 运行以检查生产环境。
 
-The default scenarios use the ``fake`` model, so a local run needs no API keys
-and makes no real LLM calls. To sanity-check a real model end to end, run the
-opt-in ``live_model`` scenario with ``--model=<name>`` (or ``E2E_LIVE_MODEL``);
-it selects that model in Settings and sends one short prompt (one cheap LLM call):
+默认场景使用 ``fake`` 模型，因此本地运行无需 API key
+也不会发起真实 LLM 调用。要端到端验证真实模型，请运行
+可选的 ``live_model`` 场景并传入 ``--model=<name>``（或 ``E2E_LIVE_MODEL``）；
+它会在 Settings 中选择该模型并发送一条简短 prompt（一次廉价的 LLM 调用）：
     uv run --with playwright python scripts/e2e_ui_tests.py --model=gpt-5-nano live_model
 
-Notes:
-  - Scenarios send only short prompts, so even a live run stays cheap.
-  - The feedback scenario verifies the widget renders and is interactive (the part
-    a Streamlit bump breaks) but does not submit a rating - clicking a star writes
-    to LangSmith through the backend, which would pollute the production project on
-    every monitoring run. (Nothing else in the suite touches LangSmith: plain
-    chat/history don't trace unless tracing is explicitly enabled.)
+注意：
+  - 场景只发送简短 prompt，因此即使实时运行也很廉价。
+  - feedback 场景验证组件能渲染且可交互（即
+    Streamlit 升级会破坏的部分），但不提交评分——点击星标会通过后端
+    写入 LangSmith，这会在每次监控运行时污染生产项目。（套件中
+    其他内容不触碰 LangSmith：普通聊天/历史不会追踪，除非显式启用追踪。）
 
-Requires a Chromium Playwright can find: either ``playwright install chromium``,
-or a pre-provisioned browser via PLAYWRIGHT_BROWSERS_PATH (as in Claude Code
-cloud environments). Exits 0 if every selected scenario passes, 1 otherwise, and
-writes ``e2e_<scenario>_failure.png`` next to the CWD for any scenario that fails.
+需要 Playwright 能找到的 Chromium：要么 ``playwright install chromium``，
+要么通过 PLAYWRIGHT_BROWSERS_PATH 预置浏览器（如 Claude Code
+云环境中）。若所有选中场景通过则退出码为 0，否则为 1，并
+对任何失败场景在 CWD 旁写入 ``e2e_<scenario>_failure.png``。
 """
 
 import os
@@ -51,18 +50,18 @@ from playwright.sync_api import Browser, Page, sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 DEFAULT_URL = "http://localhost:8501"
-# Stable symlink to the pre-provisioned browser in Claude Code cloud environments,
-# used as a fallback when the installed playwright's own browser build is absent.
+# 指向 Claude Code 云环境中预置浏览器的稳定符号链接，
+# 当已安装的 playwright 自带浏览器构建缺失时用作回退。
 CLOUD_CHROMIUM = "/opt/pw-browsers/chromium"
 
-# A simple, no-tool agent keeps the message thread deterministic (exactly one
-# assistant message per turn) so count-based waits are reliable regardless of the
-# model behind it. Scenarios that specifically test agent selection override this.
+# 一个简单的无工具 agent 使消息 thread 保持确定性（每轮恰好一条
+# assistant 消息），因此基于计数的等待无论背后是哪个模型都可靠。
+# 专门测试 agent 选择的场景会覆盖此设置。
 CHAT_AGENT = "chatbot"
 
-# The resume scenario needs full multi-turn history to survive a checkpoint round
-# trip. The @entrypoint-style chatbot only exposes its last reply via /history, so
-# use a StateGraph agent (whose messages channel accumulates every turn) instead.
+# resume 场景需要完整的多轮历史才能在 checkpoint 往返后存活。
+# @entrypoint 风格的 chatbot 仅通过 /history 暴露其最后一条回复，因此
+# 改用 StateGraph agent（其 messages 通道累积每一轮）。
 HISTORY_AGENT = "research-assistant"
 
 WAKE_TIMEOUT_S = 180
@@ -74,7 +73,7 @@ CHAT_MESSAGE = '[data-testid="stChatMessage"]'
 
 
 class E2EError(Exception):
-    """A scenario assertion failed."""
+    """场景断言失败。"""
 
 
 def log(msg: str) -> None:
@@ -82,7 +81,7 @@ def log(msg: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Browser / app helpers
+# 浏览器 / 应用辅助函数
 # --------------------------------------------------------------------------- #
 def launch_browser(p) -> Browser:
     try:
@@ -96,7 +95,7 @@ def launch_browser(p) -> Browser:
 
 
 def build_url(base_url: str, **params: str) -> str:
-    """Merge query params into base_url, preserving any it already carries."""
+    """将查询参数合并到 base_url，保留其已有的参数。"""
     parts = urllib.parse.urlsplit(base_url)
     query = dict(urllib.parse.parse_qsl(parts.query))
     query.update({k: v for k, v in params.items() if v is not None})
@@ -104,25 +103,25 @@ def build_url(base_url: str, **params: str) -> str:
 
 
 def wake_if_sleeping(page: Page) -> None:
-    """Streamlit Community Cloud shows a wake-up screen for slept apps."""
+    """Streamlit Community Cloud 会为休眠的应用显示唤醒界面。"""
     wake_button = page.get_by_text("get this app back up", exact=False)
     try:
         wake_button.first.wait_for(state="visible", timeout=5_000)
     except PlaywrightTimeoutError:
-        return  # not sleeping
+        return  # 未休眠
     log("app is asleep - clicking wake-up button")
     wake_button.first.click()
 
 
 def open_app(browser: Browser, url: str, agent: str | None = None) -> Page:
-    """Open a fresh browser context on the app and wait until it is interactive."""
+    """在应用上打开全新的浏览器上下文，并等待其可交互。"""
     if agent:
         url = build_url(url, agent=agent)
     page = browser.new_context(viewport={"width": 1280, "height": 900}).new_page()
     page.goto(url, wait_until="domcontentloaded", timeout=60_000)
     wake_if_sleeping(page)
-    # The chat input appearing means Streamlit booted, the websocket is up, and
-    # the app script ran (it renders after agent/model init).
+    # 聊天输入框出现意味着 Streamlit 已启动、websocket 已连接、
+    # 且应用脚本已运行（它在 agent/model 初始化后渲染）。
     page.locator(CHAT_INPUT).wait_for(state="visible", timeout=WAKE_TIMEOUT_S * 1_000)
     return page
 
@@ -148,19 +147,18 @@ def wait_for_response(
     min_count: int,
     timeout_s: int = RESPONSE_TIMEOUT_S,
 ) -> str:
-    """Wait for a new assistant reply to `prompt` to appear and stop streaming.
+    """等待 `prompt` 的新 assistant 回复出现并停止流式输出。
 
-    Uses the message count (not text) to detect a new turn, since the fake model
-    replies with identical text every turn. The reply is considered done once the
-    last message is non-empty, is not the prompt itself, and stops changing for
-    STREAM_SETTLE_S.
+    使用消息计数（而非文本）来检测新一轮，因为 fake 模型
+    每轮回复相同文本。当最后一条消息非空、不是 prompt 本身、
+    且持续 STREAM_SETTLE_S 不再变化时，视为回复完成。
     """
     deadline = time.monotonic() + timeout_s
     last_text, stable_since = "", None
     while time.monotonic() < deadline:
         texts = message_texts(page)
-        # The prompt must have landed as an earlier message, with the assistant
-        # reply after it, before we start trusting the last message.
+        # 在开始信任最后一条消息之前，prompt 必须已作为更早的消息落地，
+        # 且 assistant 回复在其之后。
         if len(texts) >= min_count and any(prompt in t for t in texts[:-1]):
             text = texts[-1]
             if text and text != prompt:
@@ -174,8 +172,8 @@ def wait_for_response(
 
 
 def open_settings(page: Page) -> None:
-    """Open the Settings popover. It stays open across reruns, so open it once and
-    do all settings interactions before dismissing it - re-clicking closes it."""
+    """打开 Settings 弹出框。它在 rerun 之间保持打开，因此打开一次并
+    在关闭前完成所有设置交互——再次点击会将其关闭。"""
     page.get_by_role("button", name="Settings").first.click()
     page.locator('[data-testid="stSelectbox"]').first.wait_for(state="visible", timeout=15_000)
 
@@ -186,10 +184,10 @@ def selectbox_value(page: Page, label: str) -> str | None:
 
 
 # --------------------------------------------------------------------------- #
-# Scenarios
+# 场景
 # --------------------------------------------------------------------------- #
 def scenario_chat(browser: Browser, base_url: str) -> None:
-    """Baseline: one message in, one assistant reply streams back and settles."""
+    """基线：发送一条消息，一条 assistant 回复流式返回并稳定。"""
     page = open_app(browser, base_url, agent=CHAT_AGENT)
     prompt = "Reply with the single word: pong"
     send_message(page, prompt)
@@ -198,11 +196,11 @@ def scenario_chat(browser: Browser, base_url: str) -> None:
 
 
 def scenario_multi_turn_resume(browser: Browser, base_url: str) -> None:
-    """Two-turn conversation, then resume it from the Share link in a fresh session.
+    """两轮对话，然后在新会话中通过 Share 链接恢复它。
 
-    Exercises thread persistence, the agent-aware /history fetch on resume, and the
-    Share/resume dialog - the dialog regression that #330 fixed would fail here
-    because building the share URL would error instead of rendering a link.
+    覆盖 thread 持久化、恢复时按 agent 感知的 /history 拉取，以及
+    Share/resume 对话框——#330 修复的对话框回归问题会在此失败，
+    因为构建分享 URL 时会报错而不是渲染出链接。
     """
     turn1 = "First turn: remember the number 7"
     turn2 = "Second turn: what number did I mention?"
@@ -216,9 +214,9 @@ def scenario_multi_turn_resume(browser: Browser, base_url: str) -> None:
     send_message(page, turn2)
     wait_for_response(page, turn2, min_count=4)
 
-    # Open the Share/resume dialog and read the shareable URL it builds. The
-    # dialog frame appears before Streamlit streams in its markdown, so wait for
-    # the code block's text rather than reading it the instant the dialog opens.
+    # 打开 Share/resume 对话框并读取它构建出的可分享 URL。对话框
+    # 框架会先于 Streamlit 流式写入其 markdown 出现，所以要等待
+    # 代码块的文本，而不是在对话框一打开就读取它。
     page.get_by_role("button", name="Share/resume chat").first.click()
     dialog = page.locator('[role="dialog"]')
     dialog.wait_for(state="visible", timeout=15_000)
@@ -235,10 +233,10 @@ def scenario_multi_turn_resume(browser: Browser, base_url: str) -> None:
         raise E2EError(f"share URL missing thread_id/agent: {share_url!r}")
     log(f"share URL: {share_url}")
 
-    # Resume in a brand-new session (no shared state) and confirm the thread is
-    # rehydrated from history: a StateGraph agent persists every turn, so both of
-    # our prompts should replay. (A fresh/empty thread would instead show only the
-    # agent's welcome message.)
+    # 在一个全新会话中恢复（无共享状态），并确认 thread 已从
+    # history 重新水合：StateGraph agent 会持久化每一轮，所以我们的
+    # 两条 prompt 都应重放。（全新/空 thread 则只会显示
+    # agent 的欢迎消息。）
     resumed = open_app(browser, share_url)
     if query_param(resumed, "thread_id") != thread_id:
         raise E2EError("resumed session did not carry the original thread_id from the share URL")
@@ -250,9 +248,9 @@ def scenario_multi_turn_resume(browser: Browser, base_url: str) -> None:
 
 
 def scenario_settings_selectors(browser: Browser, base_url: str) -> None:
-    """Settings popover: the model + agent selectboxes render, and switching the
-    agent to a non-default one syncs it into the ?agent= URL param."""
-    page = open_app(browser, base_url)  # default agent, so ?agent= starts absent
+    """Settings 弹出框：model + agent 选择框渲染出来，并且将
+    agent 切换到非默认项会同步到 ?agent= URL 参数中。"""
+    page = open_app(browser, base_url)  # 默认 agent，所以 ?agent= 初始时不存在
     open_settings(page)
 
     model = selectbox_value(page, "LLM to use")
@@ -268,8 +266,8 @@ def scenario_settings_selectors(browser: Browser, base_url: str) -> None:
     all_agents = [options.nth(i).inner_text().strip() for i in range(options.count())]
     if len(all_agents) < 2:
         raise E2EError(f"expected multiple agents to choose from, saw {all_agents}")
-    # Pick any agent other than the default; the default is dropped from the URL,
-    # so switching to a non-default is what proves the query-param binding works.
+    # 选择任意非默认的 agent；默认项会从 URL 中移除，
+    # 所以切换到非默认项才能证明查询参数绑定生效。
     target = next(a for a in all_agents if a != default_agent)
     options.filter(has_text=target).first.click()
     page.wait_for_timeout(1_500)
@@ -282,13 +280,13 @@ def scenario_settings_selectors(browser: Browser, base_url: str) -> None:
 
 
 def scenario_feedback(browser: Browser, base_url: str) -> None:
-    """After a reply, the star feedback widget renders and is interactive.
+    """回复之后，星标反馈组件会渲染出来且可交互。
 
-    Asserts the widget's structure - the part a Streamlit bump breaks - without
-    submitting a rating: clicking a star writes to LangSmith via the backend, and
-    doing that on every run would pollute the production LangSmith project during
-    monitoring (and hang against a backend that can't reach LangSmith). We verify
-    the stars render, carry their expected aria-labels, and are enabled/clickable.
+    断言该组件的结构——即 Streamlit 升级会破坏的部分——而不
+    提交评分：点击星标会通过后端写入 LangSmith，而在每次运行时
+    都这样做会在监控期间污染生产 LangSmith 项目（并且会在
+    后端无法访问 LangSmith 时挂起）。我们验证星标渲染出来、
+    带有预期的 aria-label，并且处于启用/可点击状态。
     """
     page = open_app(browser, base_url, agent=CHAT_AGENT)
     prompt = "Reply with the single word: pong"
@@ -309,14 +307,14 @@ def scenario_feedback(browser: Browser, base_url: str) -> None:
 
 
 def scenario_streaming_toggle(browser: Browser, base_url: str) -> None:
-    """Turning off 'Stream results' still produces a reply via the non-streaming
-    (ainvoke) path - a code path the default streaming run never exercises."""
+    """关闭「Stream results」后仍会通过非流式（ainvoke）路径产生
+    回复——这是默认流式运行从不触及的代码路径。"""
     page = open_app(browser, base_url, agent=CHAT_AGENT)
     open_settings(page)
     toggle = page.locator('[data-testid="stCheckbox"]').filter(has_text="Stream results")
     toggle.wait_for(state="visible", timeout=10_000)
-    toggle.click()  # default is on -> turn it off
-    page.keyboard.press("Escape")  # dismiss the popover so the chat input is reachable
+    toggle.click()  # 默认开启 -> 将其关闭
+    page.keyboard.press("Escape")  # 关闭弹出框，以便能够到聊天输入框
     page.wait_for_timeout(500)
 
     prompt = "Reply with the single word: pong"
@@ -326,8 +324,8 @@ def scenario_streaming_toggle(browser: Browser, base_url: str) -> None:
 
 
 def scenario_new_chat(browser: Browser, base_url: str) -> None:
-    """'New Chat' starts a fresh thread: a new thread_id in the URL and a cleared
-    conversation."""
+    """「New Chat」会开启一个全新 thread：URL 中出现新的 thread_id，
+    且对话被清空。"""
     page = open_app(browser, base_url, agent=CHAT_AGENT)
     prompt = "Reply with the single word: pong"
     send_message(page, prompt)
@@ -349,13 +347,14 @@ def scenario_new_chat(browser: Browser, base_url: str) -> None:
 
 
 def scenario_live_model(browser: Browser, base_url: str) -> None:
-    """Opt-in: select a real model in Settings and confirm it answers end to end.
+    """可选启用：在 Settings 中选择一个真实模型，并确认它能端到端
+    作答。
 
-    Unlike the other scenarios (which run on the ``fake`` model), this exercises a
-    live LLM, so it needs a backend that offers the model and the credentials for
-    it. Name the model with ``--model=<name>`` or ``E2E_LIVE_MODEL``. It sends one
-    short prompt - a single cheap LLM call - and checks the reply is a real one,
-    not the fake-model placeholder.
+    与其他场景（运行在 ``fake`` 模型上）不同，此项会调用真实 LLM，
+    因此需要一个提供该模型的后端及其凭据。用 ``--model=<name>``
+    或 ``E2E_LIVE_MODEL`` 指定模型名。它发送一条简短 prompt——
+    单次廉价的 LLM 调用——并检查回复是真实的，而非 fake 模型的
+    占位内容。
     """
     model = os.environ.get("E2E_LIVE_MODEL", "").strip()
     if not model:
@@ -369,7 +368,7 @@ def scenario_live_model(browser: Browser, base_url: str) -> None:
         available = page.locator('[role="option"]').all_inner_texts()
         raise E2EError(f"model {model!r} is not offered by this app; available: {available}")
     option.first.click()
-    page.keyboard.press("Escape")  # dismiss the popover so the chat input is reachable
+    page.keyboard.press("Escape")  # 关闭弹出框，以便能够到聊天输入框
     page.wait_for_timeout(500)
 
     prompt = "Reply with only the word: pong"
@@ -380,8 +379,8 @@ def scenario_live_model(browser: Browser, base_url: str) -> None:
     log(f"live model {model!r} replied ({len(reply)} chars): {reply[:80]!r}")
 
 
-# The default suite runs on the fake model and needs no API keys; live_model is
-# opt-in (it hits a real LLM) and only runs when named or when --model is given.
+# 默认套件运行在 fake 模型上，无需 API key；live_model 为
+# 可选启用（会调用真实 LLM），仅在指定时或给出 --model 时运行。
 SCENARIOS = {
     "chat": scenario_chat,
     "multi_turn_resume": scenario_multi_turn_resume,
@@ -395,7 +394,7 @@ DEFAULT_SCENARIOS = [name for name in SCENARIOS if name != "live_model"]
 
 
 # --------------------------------------------------------------------------- #
-# Runner
+# 运行器
 # --------------------------------------------------------------------------- #
 def main() -> None:
     args = sys.argv[1:]
@@ -416,7 +415,7 @@ def main() -> None:
             print(f"unknown argument: {arg!r} (scenarios: {', '.join(SCENARIOS)})")
             sys.exit(2)
     if not names:
-        # Default run: the fake-model suite, plus live_model only if a model is set.
+        # 默认运行：fake 模型套件，仅当设置了模型时才加上 live_model。
         names = list(DEFAULT_SCENARIOS)
         if os.environ.get("E2E_LIVE_MODEL"):
             names.append("live_model")
@@ -451,7 +450,7 @@ def main() -> None:
 
 
 def _screenshot_failure(browser: Browser, name: str) -> None:
-    """Save a screenshot of the last open page for a failed scenario."""
+    """为失败场景保存最后打开页面的截图。"""
     path = f"e2e_{name}_failure.png"
     try:
         contexts = browser.contexts

@@ -45,7 +45,7 @@ class LogLevel(StrEnum):
     CRITICAL = "CRITICAL"
 
     def to_logging_level(self) -> int:
-        """Convert to Python logging level constant."""
+        """转换为 Python 日志级别常量。"""
         import logging
 
         mapping = {
@@ -92,22 +92,22 @@ class Settings(BaseSettings):
     USE_FAKE_MODEL: bool = False
     OPENROUTER_API_KEY: SecretStr | None = None
 
-    # If DEFAULT_MODEL is None, it will be set in model_post_init
+    # 如果 DEFAULT_MODEL 为 None，将在 model_post_init 中设置
     DEFAULT_MODEL: AllModelEnum | None = None  # type: ignore[assignment]
     AVAILABLE_MODELS: set[AllModelEnum] = set()  # type: ignore[assignment]
 
-    # Set openai compatible api, mainly used for proof of concept
+    # 设置 openai 兼容 api，主要用于概念验证
     COMPATIBLE_MODEL: str | None = None
     COMPATIBLE_API_KEY: SecretStr | None = None
     COMPATIBLE_BASE_URL: str | None = None
 
     OPENWEATHERMAP_API_KEY: SecretStr | None = None
 
-    # Web search (ddgs) config
+    # Web 搜索（ddgs）配置
     WEB_SEARCH_PROXY: str = ""
     WEB_SEARCH_BACKENDS: str = "yahoo,duckduckgo"
 
-    # MCP Configuration
+    # MCP 配置
     GITHUB_PAT: SecretStr | None = None
     MCP_GITHUB_SERVER_URL: str = "https://api.githubcopilot.com/mcp/"
 
@@ -123,23 +123,23 @@ class Settings(BaseSettings):
     LANGFUSE_PUBLIC_KEY: SecretStr | None = None
     LANGFUSE_SECRET_KEY: SecretStr | None = None
 
-    # Database Configuration
+    # 数据库配置
     DATABASE_TYPE: DatabaseType = (
         DatabaseType.SQLITE
-    )  # Options: DatabaseType.SQLITE or DatabaseType.POSTGRES
+    )  # 可选值：DatabaseType.SQLITE 或 DatabaseType.POSTGRES
     SQLITE_DB_PATH: str = "var/checkpoints.db"
-    # Long-term memory store; kept separate from the checkpoints DB above
+    # 长期记忆 store；与上面的 checkpoints 数据库分开保存
     SQLITE_STORE_PATH: str = "var/memory_store.db"
 
-    # RAG vector database used by Database_Search
+    # Database_Search 使用的 RAG 向量数据库
     CHROMA_DIR: str = "./var/chroma_db"
 
-    # Optional: when set, checkpoint (short-term) and store (long-term) both
-    # use Redis so state is shared across instances. Requires a Redis server
-    # with the RedisJSON + RediSearch modules (Redis 8.0+ or Redis Stack).
+    # 可选：设置后，checkpoint（短期）和 store（长期）都
+    # 使用 Redis，从而在多个实例间共享状态。需要带有
+    # RedisJSON + RediSearch 模块的 Redis 服务器（Redis 8.0+ 或 Redis Stack）。
     REDIS_URL: str | None = None
 
-    # PostgreSQL Configuration
+    # PostgreSQL 配置
     POSTGRES_USER: str | None = None
     POSTGRES_PASSWORD: SecretStr | None = None
     POSTGRES_HOST: str | None = None
@@ -149,16 +149,16 @@ class Settings(BaseSettings):
     POSTGRES_MIN_CONNECTIONS_PER_POOL: int = 1
     POSTGRES_MAX_CONNECTIONS_PER_POOL: int = 1
 
-    # MongoDB Configuration
+    # MongoDB 配置
     MONGO_HOST: str | None = None
     MONGO_PORT: int | None = None
     MONGO_DB: str | None = None
     MONGO_USER: str | None = None
     MONGO_PASSWORD: SecretStr | None = None
     MONGO_AUTH_SOURCE: str | None = None
-    MONGO_TLS: bool = False  # opt-in TLS for MongoDB; set to True for production/Atlas
+    MONGO_TLS: bool = False  # MongoDB 的可选 TLS；生产/Atlas 环境设为 True
 
-    # Azure OpenAI Settings
+    # Azure OpenAI 设置
     AZURE_OPENAI_API_KEY: SecretStr | None = None
     AZURE_OPENAI_ENDPOINT: str | None = None
     AZURE_OPENAI_API_VERSION: str = "2024-02-15-preview"
@@ -185,7 +185,7 @@ class Settings(BaseSettings):
         if not active_keys:
             raise ValueError("At least one LLM API key must be provided.")
 
-        # USE_FAKE_MODEL must win the default even when real provider keys are present.
+        # 即使存在真实 provider key，USE_FAKE_MODEL 也必须赢得默认值。
         if self.USE_FAKE_MODEL and self.DEFAULT_MODEL is None:
             self.DEFAULT_MODEL = FakeModelName.FAKE
 
@@ -239,7 +239,7 @@ class Settings(BaseSettings):
                     if self.DEFAULT_MODEL is None:
                         self.DEFAULT_MODEL = AzureOpenAIModelName.AZURE_GPT_5_MINI
                     self.AVAILABLE_MODELS.update(set(AzureOpenAIModelName))
-                    # Validate Azure OpenAI settings if Azure provider is available
+                    # 如果 Azure provider 可用，则校验 Azure OpenAI 设置
                     if not self.AZURE_OPENAI_API_KEY:
                         raise ValueError("AZURE_OPENAI_API_KEY must be set")
                     if not self.AZURE_OPENAI_ENDPOINT:
@@ -247,7 +247,7 @@ class Settings(BaseSettings):
                     if not self.AZURE_OPENAI_DEPLOYMENT_MAP:
                         raise ValueError("AZURE_OPENAI_DEPLOYMENT_MAP must be set")
 
-                    # Parse deployment map if it's a string
+                    # 如果 deployment map 是字符串则解析它
                     if isinstance(self.AZURE_OPENAI_DEPLOYMENT_MAP, str):
                         try:
                             self.AZURE_OPENAI_DEPLOYMENT_MAP = loads(
@@ -256,7 +256,7 @@ class Settings(BaseSettings):
                         except Exception as e:
                             raise ValueError(f"Invalid AZURE_OPENAI_DEPLOYMENT_MAP JSON: {e}")
 
-                    # Validate required deployments exist
+                    # 校验所需的 deployment 是否存在
                     required_models = {"gpt-5", "gpt-5-mini"}
                     missing_models = required_models - set(self.AZURE_OPENAI_DEPLOYMENT_MAP.keys())
                     if missing_models:
@@ -267,7 +267,18 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def BASE_URL(self) -> str:
-        return f"http://{self.HOST}:{self.PORT}"
+        """客户端应使用该 URL 访问此服务。
+
+        `HOST` 是*绑定*地址。`0.0.0.0` 和 `::` 表示「所有接口」，
+        这不是有效的连接目标——在 Windows 上连接 `0.0.0.0` 会
+        直接以 WinError 10049 失败——因此这里将通配符映射为回环地址。
+
+        任何发起连接的一方（示例客户端、UI）都应使用该 URL，而不是
+        从 HOST 重新拼接 URL，通配符正是通过这种方式泄漏到调用方的。
+        """
+        loopback = {"0.0.0.0": "127.0.0.1", "": "127.0.0.1", "::": "[::1]"}
+        host = loopback.get(self.HOST, self.HOST)
+        return f"http://{host}:{self.PORT}"
 
     def is_dev(self) -> bool:
         return self.MODE == "dev"

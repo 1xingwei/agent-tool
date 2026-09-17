@@ -8,7 +8,7 @@ from schema.models import OpenAIModelName
 
 @pytest.fixture
 def mock_agent_client(mock_env):
-    """Fixture for creating a mock AgentClient with a clean environment."""
+    """用于创建具有干净环境的 mock AgentClient 的 fixture。"""
 
     mock_info = ServiceMetadata(
         default_agent="test-agent",
@@ -26,6 +26,6 @@ def mock_agent_client(mock_env):
     ):
         mock_agent_client_instance = mock_agent_client.return_value
         mock_agent_client_instance.info = mock_info
-        # Give the mock a deterministic selected agent.
+        # 为 mock 提供确定性的已选 agent。
         mock_agent_client_instance.agent = "test-agent"
         yield mock_agent_client_instance

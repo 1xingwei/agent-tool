@@ -6,9 +6,9 @@ from client import AgentClient
 
 @pytest.mark.docker
 def test_service_with_fake_model():
-    """Test the service using the fake model.
+    """使用 fake 模型测试服务。
 
-    This test requires the service container to be running with USE_FAKE_MODEL=true
+    此测试要求服务容器以 USE_FAKE_MODEL=true 运行
     """
     client = AgentClient("http://0.0.0.0", agent="chatbot")
     response = client.invoke("Tell me a joke?", model="fake")
@@ -18,9 +18,9 @@ def test_service_with_fake_model():
 
 @pytest.mark.docker
 def test_service_with_app():
-    """Test the service using the app.
+    """使用 app 测试服务。
 
-    This test requires the service container to be running with USE_FAKE_MODEL=true
+    此测试要求服务容器以 USE_FAKE_MODEL=true 运行
     """
     at = AppTest.from_file("../../src/streamlit_app.py").run()
     assert at.chat_message[0].avatar == "assistant"

@@ -1,4 +1,4 @@
-"""Tests for the GitHub MCP Agent."""
+"""GitHub MCP Agent 的测试。"""
 
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -9,10 +9,10 @@ from core.settings import settings
 
 
 class TestGitHubMCPAgent:
-    """Test the GitHub MCP Agent functionality."""
+    """测试 GitHub MCP Agent 功能。"""
 
     def test_initialization(self):
-        """Test that agent initializes correctly."""
+        """测试 agent 是否正确初始化。"""
         agent = GitHubMCPAgent()
         assert not agent._loaded
         assert agent._mcp_tools == []
@@ -20,7 +20,7 @@ class TestGitHubMCPAgent:
 
     @pytest.mark.asyncio
     async def test_load_without_github_pat(self):
-        """Test load when GITHUB_PAT is not set."""
+        """测试未设置 GITHUB_PAT 时的加载。"""
         agent = GitHubMCPAgent()
 
         with patch.object(settings, "GITHUB_PAT", None):
@@ -33,11 +33,11 @@ class TestGitHubMCPAgent:
 
     @pytest.mark.asyncio
     async def test_load_with_github_pat(self):
-        """Test load when GITHUB_PAT is set and configured."""
+        """测试已设置并配置 GITHUB_PAT 时的加载。"""
         agent = GitHubMCPAgent()
         mock_client = Mock()
 
-        # Create proper tool instances
+        # 创建正确的工具实例
         from langchain_core.tools import Tool
 
         mock_tool1 = Tool(name="test_tool_1", description="Test tool 1", func=lambda x: x)
@@ -68,7 +68,7 @@ class TestGitHubMCPAgent:
 
     @pytest.mark.asyncio
     async def test_load_with_mcp_error(self):
-        """Test load when MCP client creation fails."""
+        """测试 MCP 客户端创建失败时的加载。"""
         agent = GitHubMCPAgent()
 
         with (
@@ -92,7 +92,7 @@ class TestGitHubMCPAgent:
         assert agent._graph is not None
 
     def test_create_graph(self):
-        """Test graph creation."""
+        """测试图创建。"""
         agent = GitHubMCPAgent()
         agent._mcp_tools = [Mock(), Mock()]
 
@@ -116,14 +116,14 @@ class TestGitHubMCPAgent:
             )
 
     def test_get_graph_not_loaded(self):
-        """Test get_graph when agent is not loaded."""
+        """测试 agent 未加载时的 get_graph。"""
         agent = GitHubMCPAgent()
 
         with pytest.raises(RuntimeError, match="Agent not loaded. Call load\\(\\) first."):
             agent.get_graph()
 
     def test_get_graph_loaded(self):
-        """Test get_graph when agent is loaded."""
+        """测试 agent 已加载时的 get_graph。"""
         agent = GitHubMCPAgent()
         agent._loaded = True
         agent._graph = Mock()

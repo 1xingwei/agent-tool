@@ -70,23 +70,23 @@ async def acall_model(state: AgentState, config: RunnableConfig) -> AgentState:
                 )
             ]
         }
-    # We return a list, because this will get added to the existing list
+    # 返回列表，因为这会追加到现有列表
     return {"messages": [response]}
 
 
 async def remember_review(
     state: AgentState, config: RunnableConfig, store: BaseStore | None
 ) -> AgentState:
-    """Persist the final review conclusion to the store, keyed per repo."""
+    """将最终审查结论持久化到 store，按仓库为键。"""
     last_message = state["messages"][-1]
     if not isinstance(last_message, AIMessage):
         return {"messages": []}
     if last_message.tool_calls:
         return {"messages": []}
     if store is None:
-        # The store is only injected when the graph runs under the service's
-        # lifespan. Invoking it standalone (`langgraph dev`, run_agent.py, a unit
-        # test) passes None, and a bare `store.aput` would raise AttributeError.
+        # 仅当图在服务的 lifespan 下运行时才会注入 store。
+        # 独立调用它（`langgraph dev`、run_agent.py、单元测试）会传入 None，
+        # 而裸调用 `store.aput` 会引发 AttributeError。
         logger.warning("No store injected; the review conclusion was not persisted.")
         return {"messages": []}
     user_id = config["configurable"].get("user_id", "anonymous")
@@ -107,7 +107,7 @@ async def block_unsafe_content(state: AgentState, config: RunnableConfig) -> Age
     return {"messages": [format_safety_message(safety)]}
 
 
-# Define the graph
+# 定义图
 agent = StateGraph(AgentState)
 agent.add_node("model", acall_model)
 agent.add_node("tools", ToolNode(tools))
@@ -117,7 +117,7 @@ agent.add_node("remember_review", remember_review)
 agent.set_entry_point("guard_input")
 
 
-# Check for unsafe input and block further processing if found
+# 检查不安全输入，若发现则阻止后续处理
 def check_safety(state: AgentState) -> Literal["unsafe", "safe"]:
     safety: SafeguardOutput = state["safety"]
     match safety.safety_assessment:
@@ -131,14 +131,14 @@ agent.add_conditional_edges(
     "guard_input", check_safety, {"unsafe": "block_unsafe_content", "safe": "model"}
 )
 
-# Always END after blocking unsafe content
+# 阻止不安全内容后始终 END
 agent.add_edge("block_unsafe_content", END)
 
-# Always run "model" after "tools"
+# 始终在 "tools" 之后运行 "model"
 agent.add_edge("tools", "model")
 
 
-# After "model", if there are tool calls, run "tools". Otherwise remember + END.
+# 在 "model" 之后，若有工具调用则运行 "tools"。否则 remember + END。
 def pending_tool_calls(state: AgentState) -> Literal["tools", "done"]:
     last_message = state["messages"][-1]
     if not isinstance(last_message, AIMessage):

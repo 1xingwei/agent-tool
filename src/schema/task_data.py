@@ -58,17 +58,17 @@ class TaskDataStatus:
         status.write(task_data.data)
         status.write("---")
         if task_data.run_id not in self.current_task_data:
-            # Status label always shows the last newly started task
+            # 状态标签始终显示最近新启动的任务
             status.update(label=f"""Task: {task_data.name}""")
         self.current_task_data[task_data.run_id] = task_data
         if all(entry.completed() for entry in self.current_task_data.values()):
-            # Status is "error" if any task has errored
+            # 若有任何任务出错，状态为 "error"
             if any(entry.completed_with_error() for entry in self.current_task_data.values()):
                 state = "error"
-            # Status is "complete" if all tasks have completed successfully
+            # 若所有任务均成功完成，状态为 "complete"
             else:
                 state = "complete"
-        # Status is "running" until all tasks have completed
+        # 在所有任务完成前，状态为 "running"
         else:
             state = "running"
         status.update(state=state)  # type: ignore[arg-type]

@@ -12,13 +12,13 @@ from schema.models import OpenAIModelName
 
 
 def test_init(mock_env):
-    """Test client initialization with different parameters."""
-    # Test default values
+    """测试使用不同参数初始化客户端。"""
+    # 测试默认值
     client = AgentClient(get_info=False)
     assert client.base_url == "http://0.0.0.0"
     assert client.timeout is None
 
-    # Test custom values
+    # 测试自定义值
     client = AgentClient(
         base_url="http://test",
         timeout=30.0,
@@ -31,23 +31,23 @@ def test_init(mock_env):
 
 
 def test_headers(mock_env):
-    """Test header generation with and without auth."""
-    # Test without auth
+    """测试带认证和不带认证时的请求头生成。"""
+    # 测试不带认证
     client = AgentClient(get_info=False)
     assert client._headers == {}
 
-    # Test with auth
+    # 测试带认证
     with patch.dict(os.environ, {"AUTH_SECRET": "test-secret"}, clear=True):
         client = AgentClient(get_info=False)
         assert client._headers == {"Authorization": "Bearer test-secret"}
 
 
 def test_invoke(agent_client):
-    """Test synchronous invocation."""
+    """测试同步调用。"""
     QUESTION = "What is the weather?"
     ANSWER = "The weather is sunny."
 
-    # Mock successful response
+    # 模拟成功响应
     mock_request = Request("POST", "http://test/invoke")
     mock_response = Response(
         200,
@@ -60,7 +60,7 @@ def test_invoke(agent_client):
         assert response.type == "ai"
         assert response.content == ANSWER
 
-    # Test with model and thread_id
+    # 测试带 model 和 thread_id
     with patch("httpx.post", return_value=mock_response) as mock_post:
         response = agent_client.invoke(
             QUESTION,
@@ -68,13 +68,13 @@ def test_invoke(agent_client):
             thread_id="test-thread",
         )
         assert isinstance(response, ChatMessage)
-        # Verify request
+        # 验证请求
         args, kwargs = mock_post.call_args
         assert kwargs["json"]["message"] == QUESTION
         assert kwargs["json"]["model"] == "gpt-5-nano"
         assert kwargs["json"]["thread_id"] == "test-thread"
 
-    # Test error response
+    # 测试错误响应
     error_response = Response(500, text="Internal Server Error", request=mock_request)
     with patch("httpx.post", return_value=error_response):
         with pytest.raises(AgentClientError) as exc:
@@ -84,11 +84,11 @@ def test_invoke(agent_client):
 
 @pytest.mark.asyncio
 async def test_ainvoke(agent_client):
-    """Test asynchronous invocation."""
+    """测试异步调用。"""
     QUESTION = "What is the weather?"
     ANSWER = "The weather is sunny."
 
-    # Test successful response
+    # 测试成功响应
     mock_request = Request("POST", "http://test/invoke")
     mock_response = Response(200, json={"type": "ai", "content": ANSWER}, request=mock_request)
     with patch("httpx.AsyncClient.post", return_value=mock_response):
@@ -97,7 +97,7 @@ async def test_ainvoke(agent_client):
         assert response.type == "ai"
         assert response.content == ANSWER
 
-    # Test with model and thread_id
+    # 测试带 model 和 thread_id
     with patch("httpx.AsyncClient.post", return_value=mock_response) as mock_post:
         response = await agent_client.ainvoke(
             QUESTION,
@@ -107,13 +107,13 @@ async def test_ainvoke(agent_client):
         assert isinstance(response, ChatMessage)
         assert response.type == "ai"
         assert response.content == ANSWER
-        # Verify request
+        # 验证请求
         args, kwargs = mock_post.call_args
         assert kwargs["json"]["message"] == QUESTION
         assert kwargs["json"]["model"] == "gpt-5-nano"
         assert kwargs["json"]["thread_id"] == "test-thread"
 
-    # Test error response
+    # 测试错误响应
     error_response = Response(500, text="Internal Server Error", request=mock_request)
     with patch("httpx.AsyncClient.post", return_value=error_response):
         with pytest.raises(AgentClientError) as exc:
@@ -122,12 +122,12 @@ async def test_ainvoke(agent_client):
 
 
 def test_stream(agent_client):
-    """Test synchronous streaming."""
+    """测试同步流式。"""
     QUESTION = "What is the weather?"
     TOKENS = ["The", " weather", " is", " sunny", "."]
     FINAL_ANSWER = "The weather is sunny."
 
-    # Create mock response with streaming events
+    # 创建带流式事件的模拟响应
     events = (
         [f"data: {json.dumps({'type': 'token', 'content': token})}" for token in TOKENS]
         + [
@@ -136,7 +136,7 @@ def test_stream(agent_client):
         + ["data: [DONE]"]
     )
 
-    # Mock the streaming response
+    # 模拟流式响应
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.iter_lines.return_value = events
@@ -145,21 +145,21 @@ def test_stream(agent_client):
     mock_response.__exit__ = Mock(return_value=None)
 
     with patch("httpx.stream", return_value=mock_response):
-        # Collect all streamed responses
+        # 收集所有流式响应
         responses = list(agent_client.stream(QUESTION))
 
-        # Verify tokens were streamed
-        assert len(responses) == len(TOKENS) + 1  # tokens + final message
+        # 验证 token 已被流式输出
+        assert len(responses) == len(TOKENS) + 1  # token + 最终消息
         for i, token in enumerate(TOKENS):
             assert responses[i] == token
 
-        # Verify final message
+        # 验证最终消息
         final_message = responses[-1]
         assert isinstance(final_message, ChatMessage)
         assert final_message.type == "ai"
         assert final_message.content == FINAL_ANSWER
 
-    # Test error response
+    # 测试错误响应
     error_response = Response(
         500, text="Internal Server Error", request=Request("POST", "http://test/stream")
     )
@@ -174,12 +174,12 @@ def test_stream(agent_client):
 
 @pytest.mark.asyncio
 async def test_astream(agent_client):
-    """Test asynchronous streaming."""
+    """测试异步流式。"""
     QUESTION = "What is the weather?"
     TOKENS = ["The", " weather", " is", " sunny", "."]
     FINAL_ANSWER = "The weather is sunny."
 
-    # Create mock response with streaming events
+    # 创建带流式事件的模拟响应
     events = (
         [f"data: {json.dumps({'type': 'token', 'content': token})}" for token in TOKENS]
         + [
@@ -188,12 +188,12 @@ async def test_astream(agent_client):
         + ["data: [DONE]"]
     )
 
-    # Create an async iterator for the events
+    # 为事件创建异步迭代器
     async def async_events():
         for event in events:
             yield event
 
-    # Mock the streaming response
+    # 模拟流式响应
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.request = Request("POST", "http://test/stream")
@@ -206,23 +206,23 @@ async def test_astream(agent_client):
     mock_client.stream = Mock(return_value=mock_response)
 
     with patch("httpx.AsyncClient", return_value=mock_client):
-        # Collect all streamed responses
+        # 收集所有流式响应
         responses = []
         async for response in agent_client.astream(QUESTION):
             responses.append(response)
 
-        # Verify tokens were streamed
-        assert len(responses) == len(TOKENS) + 1  # tokens + final message
+        # 验证 token 已被流式输出
+        assert len(responses) == len(TOKENS) + 1  # token + 最终消息
         for i, token in enumerate(TOKENS):
             assert responses[i] == token
 
-        # Verify final message
+        # 验证最终消息
         final_message = responses[-1]
         assert isinstance(final_message, ChatMessage)
         assert final_message.type == "ai"
         assert final_message.content == FINAL_ANSWER
 
-    # Test error response
+    # 测试错误响应
     error_response = Response(
         500, text="Internal Server Error", request=Request("POST", "http://test/stream")
     )
@@ -240,24 +240,24 @@ async def test_astream(agent_client):
 
 @pytest.mark.asyncio
 async def test_acreate_feedback(agent_client):
-    """Test asynchronous feedback creation."""
+    """测试异步反馈创建。"""
     RUN_ID = "test-run"
     KEY = "test-key"
     SCORE = 0.8
     KWARGS = {"comment": "Great response!"}
 
-    # Test successful response
+    # 测试成功响应
     mock_response = Response(200, json={}, request=Request("POST", "http://test/feedback"))
     with patch("httpx.AsyncClient.post", return_value=mock_response) as mock_post:
         await agent_client.acreate_feedback(RUN_ID, KEY, SCORE, KWARGS)
-        # Verify request
+        # 验证请求
         args, kwargs = mock_post.call_args
         assert kwargs["json"]["run_id"] == RUN_ID
         assert kwargs["json"]["key"] == KEY
         assert kwargs["json"]["score"] == SCORE
         assert kwargs["json"]["kwargs"] == KWARGS
 
-    # Test error response
+    # 测试错误响应
     error_response = Response(
         500, text="Internal Server Error", request=Request("POST", "http://test/feedback")
     )
@@ -268,7 +268,7 @@ async def test_acreate_feedback(agent_client):
 
 
 def test_get_history(agent_client):
-    """Test chat history retrieval."""
+    """测试聊天历史检索。"""
     THREAD_ID = "test-thread"
     HISTORY = {
         "messages": [
@@ -277,7 +277,7 @@ def test_get_history(agent_client):
         ]
     }
 
-    # Mock successful response - defaults to the client's selected agent
+    # 模拟成功响应——默认使用客户端选中的 agent
     mock_response = Response(200, json=HISTORY, request=Request("POST", "http://test/history"))
     with patch("httpx.post", return_value=mock_response) as mock_post:
         history = agent_client.get_history(THREAD_ID)
@@ -285,15 +285,15 @@ def test_get_history(agent_client):
         assert len(history.messages) == 2
         assert history.messages[0].type == "human"
         assert history.messages[1].type == "ai"
-        # The client's selected agent is used to scope the history request
+        # 客户端选中的 agent 用于限定历史请求的范围
         assert mock_post.call_args.args[0] == "http://test/test-agent/history"
 
-    # An explicit agent overrides the client's selected agent
+    # 显式指定的 agent 会覆盖客户端选中的 agent
     with patch("httpx.post", return_value=mock_response) as mock_post:
         agent_client.get_history(THREAD_ID, agent="chatbot")
         assert mock_post.call_args.args[0] == "http://test/chatbot/history"
 
-    # Test error response
+    # 测试错误响应
     error_response = Response(
         500, text="Internal Server Error", request=Request("POST", "http://test/history")
     )
@@ -307,7 +307,7 @@ def test_info(agent_client):
     assert agent_client.info is None
     assert agent_client.agent == "test-agent"
 
-    # Mock info response
+    # 模拟 info 响应
     test_info = ServiceMetadata(
         default_agent="custom-agent",
         agents=[AgentInfo(key="custom-agent", description="Custom agent")],
@@ -318,25 +318,25 @@ def test_info(agent_client):
         200, json=test_info.model_dump(), request=Request("GET", "http://test/info")
     )
 
-    # Update an existing client with info
+    # 用 info 更新已有客户端
     with patch("httpx.get", return_value=test_response):
         agent_client.retrieve_info()
 
     assert agent_client.info == test_info
     assert agent_client.agent == "custom-agent"
 
-    # Test invalid update_agent
+    # 测试无效的 update_agent
     with pytest.raises(AgentClientError) as exc:
         agent_client.update_agent("unknown-agent")
     assert "Agent unknown-agent not found in available agents: custom-agent" in str(exc.value)
 
-    # Test a fresh client with info
+    # 测试带 info 的全新客户端
     with patch("httpx.get", return_value=test_response):
         agent_client = AgentClient(base_url="http://test")
     assert agent_client.info == test_info
     assert agent_client.agent == "custom-agent"
 
-    # Test error on invoke if no agent set
+    # 测试未设置 agent 时调用报错
     agent_client = AgentClient(base_url="http://test", get_info=False)
     with pytest.raises(AgentClientError) as exc:
         agent_client.invoke("test")
@@ -344,7 +344,7 @@ def test_info(agent_client):
 
 
 def test_get_user_threads(agent_client):
-    """Test user threads retrieval under various configurations."""
+    """测试各种配置下的用户 thread 检索。"""
     USER_ID = "user-123"
 
     MOCK_THREADS_RESPONSE = {
@@ -416,7 +416,7 @@ def test_get_user_threads(agent_client):
 
 @pytest.mark.asyncio
 async def test_aget_user_threads(agent_client):
-    """Test async user threads retrieval."""
+    """测试异步用户 thread 检索。"""
     USER_ID = "user-123"
 
     mock_request = Request("GET", "http://test/test-agent/threads")

@@ -1,16 +1,16 @@
-"""Remove pytest session directories that pytest itself could not delete.
+"""删除 pytest 自身无法删除的 pytest 会话目录。
 
-On Windows, git marks loose objects under ``.git/objects`` as read-only.
-``shutil.rmtree`` -- and therefore pytest's own tmp_path cleanup -- aborts on
-them with ``PermissionError [WinError 5]``. pytest swallows that error and moves
-on, leaving one ``garbage-<uuid>`` directory behind per session, so the system
-temp folder slowly fills up with these multi-megabyte leftovers.
+在 Windows 上，git 会将 ``.git/objects`` 下的松散对象标记为只读。
+``shutil.rmtree``——以及 pytest 自身的 tmp_path 清理——会因
+``PermissionError [WinError 5]`` 而中止。pytest 会吞掉该错误并继续，
+导致每个会话留下一个 ``garbage-<uuid>`` 目录，系统
+临时文件夹会逐渐被这些数兆字节的残留物填满。
 
-This script clears the read-only bit across the tree first, then deletes it.
-It only ever touches pytest scratch directories -- never project data.
-Not part of the pytest suite; it is a local maintenance tool.
+此脚本先清除整棵树的只读位，然后删除。
+它只触及 pytest 临时目录——绝不涉及项目数据。
+不属于 pytest 测试套件；它是本地维护工具。
 
-Usage (run from the repo root):
+用法（从仓库根目录运行）：
     uv run python scripts/clean_pytest_tmp.py --dry-run
     uv run python scripts/clean_pytest_tmp.py
     uv run python scripts/clean_pytest_tmp.py .pytest_tmp_run
@@ -26,7 +26,7 @@ from pathlib import Path
 
 
 def _pytest_temp_root() -> Path:
-    """The parent directory pytest stores its numbered session dirs under."""
+    """pytest 存放其编号会话目录的父目录。"""
     return Path(tempfile.gettempdir()) / f"pytest-of-{getpass.getuser()}"
 
 
@@ -35,7 +35,7 @@ def _count_items(root: Path) -> int:
 
 
 def _clear_readonly(root: Path) -> int:
-    """Recursively drop the read-only bit, without which rmtree fails on Windows."""
+    """递归清除只读位，否则在 Windows 上 rmtree 会失败。"""
     cleared = 0
     for path in root.rglob("*"):
         try:

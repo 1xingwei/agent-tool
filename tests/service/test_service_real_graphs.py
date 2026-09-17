@@ -1,9 +1,8 @@
-"""Integration tests for /invoke and /stream against real compiled graphs.
+"""针对真实编译图的 /invoke 和 /stream 集成测试。
 
-The unit tests in test_service.py drive an AsyncMock agent, so every tuple shape and
-event ordering they assert is hand-built rather than produced by LangGraph. These run the
-same endpoints against real graphs on a real checkpointer, so a change in how LangGraph
-reports interrupts, orders stream events, or surfaces pending tasks shows up here.
+test_service.py 中的单元测试驱动的是 AsyncMock agent，因此它们断言的每个元组形状和
+事件顺序都是手工构造的，而非由 LangGraph 产生。这些测试在真实 checkpointer 上对真实图
+运行相同的端点，因此 LangGraph 在报告中断、排序流事件或暴露待处理任务方面的变化都会在此显现。
 """
 
 import json
@@ -35,7 +34,7 @@ async def ask_color(state: MessagesState) -> MessagesState:
 
 
 def build_interrupt_agent(checkpointer):
-    """Emits a message before interrupting, so the interrupt arrives mid-stream."""
+    """在中断前先发出一条消息，使中断在流中途到达。"""
     graph = StateGraph(MessagesState)
     graph.add_node("greet", greet)
     graph.add_node("ask", ask_color)
@@ -81,7 +80,7 @@ async def report_progress(state: MessagesState, writer: StreamWriter) -> Message
 
 
 def build_custom_data_agent(checkpointer):
-    """The bg-task-agent shape: a node writing custom data alongside its messages."""
+    """bg-task-agent 的形态：一个节点在写入消息的同时写入自定义数据。"""
     graph = StateGraph(MessagesState)
     graph.add_node("report", report_progress)
     graph.set_entry_point("report")
@@ -91,8 +90,8 @@ def build_custom_data_agent(checkpointer):
 
 @pytest_asyncio.fixture(params=["memory", "sqlite"])
 async def checkpointer(request, tmp_path):
-    """Pending interrupts and accumulated messages both round-trip through the
-    checkpointer, so the tests that depend on them run against a real DB as well."""
+    """待处理的中断和累积的消息都会经由 checkpointer 往返，因此依赖它们的测试
+    同样针对真实数据库运行。"""
     if request.param == "memory":
         yield MemorySaver()
     else:
@@ -133,7 +132,7 @@ async def history_of(client: httpx.AsyncClient, path: str, thread_id: str) -> li
 
 @pytest.mark.asyncio
 async def test_invoke_resumes_an_interrupted_thread(checkpointer) -> None:
-    """The second call must resume the pending interrupt, not start a fresh turn."""
+    """第二次调用必须恢复待处理的中断，而不是开启新一轮。"""
     agents = {"interrupt-graph": build_interrupt_agent(checkpointer)}
     async with client_for(agents) as client:
         first = await client.post(
@@ -208,7 +207,7 @@ async def test_invoke_accumulates_state_across_turns(checkpointer) -> None:
 
 @pytest.mark.asyncio
 async def test_invoke_returns_only_the_final_message() -> None:
-    """Pins the documented limitation: intermediate AIMessages are dropped by /invoke."""
+    """固定记录已知限制：中间 AIMessage 会被 /invoke 丢弃。"""
     agents = {"two-step-agent": build_two_step_agent(MemorySaver())}
     async with client_for(agents) as client:
         response = await client.post(

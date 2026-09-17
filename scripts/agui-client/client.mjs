@@ -1,15 +1,15 @@
-// Minimal AG-UI client for manually validating the service's /agui endpoints,
-// built on the official @ag-ui/client SDK. See docs/AGUI.md for details.
+// 用于手动验证服务 /agui 端点的最小 AG-UI 客户端，
+// 基于官方 @ag-ui/client SDK 构建。详见 docs/02-AG-UI协议支持.md。
 //
-// Usage:
+// 用法：
 //   cd scripts/agui-client
 //   npm install
 //   node client.mjs [message] [agent]
 //
-// Environment variables:
-//   AGENT_URL   - base URL of the agent service (default: http://localhost:8080)
-//   AUTH_SECRET - bearer token, if the service has one configured
-//   THREAD_ID   - reuse a thread to continue a conversation (default: random)
+// 环境变量：
+//   AGENT_URL   - agent 服务的基础 URL（默认：http://localhost:8080）
+//   AUTH_SECRET - bearer token，如果服务配置了的话
+//   THREAD_ID   - 复用 thread 以继续对话（默认：随机）
 
 import { randomUUID } from "crypto";
 import { HttpAgent } from "@ag-ui/client";
@@ -42,9 +42,9 @@ try {
         eventTypes.add(event.type);
       },
       onTextMessageContentEvent({ event }) {
-        // Print each delta as it arrives rather than re-rendering the full buffer -
-        // an in-place overwrite via \r depends on terminal support that isn't
-        // consistent (e.g. piping through `docker compose logs`).
+        // 每个增量到达时立即打印，而非重新渲染整个缓冲区——
+        // 通过 \r 进行原地覆盖依赖于终端支持，而这一点并不
+        // 一致（例如通过 `docker compose logs` 管道输出）。
         if (!printedPrefix) {
           process.stdout.write("assistant: ");
           printedPrefix = true;
@@ -55,7 +55,7 @@ try {
         if (event.name === "on_interrupt") {
           console.log(`[interrupted] ${JSON.stringify(event.value)}`);
           console.log(
-            "resume by running the same thread with forwardedProps {command: {resume: <answer>}} - see docs/AGUI.md"
+            "resume by running the same thread with forwardedProps {command: {resume: <answer>}} - see docs/02-AG-UI协议支持.md"
           );
         }
       },

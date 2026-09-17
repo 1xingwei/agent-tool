@@ -47,12 +47,11 @@ def test_git_log_and_diff(tmp_path) -> None:
 
 
 def test_git_log_decodes_non_ascii_commits(tmp_path, monkeypatch) -> None:
-    """Git emits UTF-8, but the service process decodes with the locale (cp936 on
-    Windows), which blanked stdout and crashed every git_log call on this repo.
+    """Git 输出 UTF-8，但服务进程按 locale（Windows 上为 cp936）解码，
+    导致 stdout 变空，并使此仓库上的每次 git_log 调用崩溃。
 
-    Asserting the text alone is not enough: pytest inherits PYTHONUTF8=1 from the
-    shell and CI runs under a UTF-8 locale, so both would decode correctly even
-    without the fix. The explicit encoding is pinned instead.
+    仅断言文本还不够：pytest 从 shell 继承 PYTHONUTF8=1，且 CI 在 UTF-8 locale 下运行，
+    因此即使没有修复，两者也能正确解码。所以改为显式固定编码。
     """
     _make_repo(tmp_path, {"a.py": "x = 1\n"})
     subprocess.run(
@@ -108,6 +107,6 @@ async def test_remember_review_writes_store(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_remember_review_without_store_is_a_noop() -> None:
-    """Standalone invocations (`langgraph dev`, run_agent.py) pass store=None."""
+    """独立调用（`langgraph dev`、run_agent.py）传入 store=None。"""
     state = {"messages": [AIMessage(content="review done")]}
     assert await remember_review(state, {"configurable": {}}, None) == {"messages": []}

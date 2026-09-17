@@ -1,4 +1,4 @@
-"""OpenAI text-to-speech implementation."""
+"""OpenAI 文本转语音实现。"""
 
 import logging
 
@@ -8,37 +8,37 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAITTS:
-    """OpenAI TTS provider."""
+    """OpenAI TTS 提供方。"""
 
-    # API constraints
+    # API 约束
     MAX_TEXT_LENGTH = 4096
     MIN_TEXT_LENGTH = 3
 
-    # Available configuration options
+    # 可用配置选项
     VALID_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
     VALID_MODELS = ["tts-1", "tts-1-hd"]
 
     def __init__(self, api_key: str | None = None, voice: str = "alloy", model: str = "tts-1"):
-        """Initialize OpenAI TTS.
+        """初始化 OpenAI TTS。
 
         Args:
-            api_key: OpenAI API key (uses env var if not provided)
-            voice: Voice name (alloy, echo, fable, onyx, nova, shimmer)
-            model: Model name (tts-1 or tts-1-hd)
+            api_key: OpenAI API key（未提供时使用环境变量）
+            voice: 语音名称（alloy、echo、fable、onyx、nova、shimmer）
+            model: 模型名称（tts-1 或 tts-1-hd）
 
         Raises:
-            ValueError: If voice or model is invalid
-            Exception: If OpenAI client initialization fails
+            ValueError: 若 voice 或 model 无效
+            Exception: 若 OpenAI 客户端初始化失败
         """
-        # Validate voice parameter
+        # 校验 voice 参数
         if voice not in self.VALID_VOICES:
             raise ValueError(f"Invalid voice '{voice}'. Must be one of {self.VALID_VOICES}")
 
-        # Validate model parameter
+        # 校验 model 参数
         if model not in self.VALID_MODELS:
             raise ValueError(f"Invalid model '{model}'. Must be one of {self.VALID_MODELS}")
 
-        # Create OpenAI client with provided key or from environment
+        # 使用提供的 key 或从环境变量创建 OpenAI 客户端
         self.client = OpenAI(api_key=api_key) if api_key else OpenAI()
         self.voice = voice
         self.model = model
@@ -46,28 +46,28 @@ class OpenAITTS:
         logger.info(f"OpenAI TTS initialized: voice={voice}, model={model}")
 
     def _validate_and_prepare_text(self, text: str) -> str | None:
-        """Validate and prepare text for TTS generation.
+        """校验并准备用于 TTS 生成的文本。
 
         Args:
-            text: Raw text input
+            text: 原始文本输入
 
         Returns:
-            Prepared text ready for TTS, or None if text is too short
+            准备好用于 TTS 的文本，若文本过短则为 None
 
         Note:
-            - Strips whitespace
-            - Returns None if text is below minimum length
-            - Truncates text if above maximum length
+            - 去除空白字符
+            - 若文本低于最小长度则返回 None
+            - 若文本超过最大长度则截断
         """
-        # Remove leading/trailing whitespace
+        # 去除首尾空白字符
         text = text.strip()
 
-        # Skip very short text (not worth API call)
+        # 跳过过短文本（不值得调用 API）
         if len(text) < self.MIN_TEXT_LENGTH:
             logger.debug(f"OpenAI TTS: skipping short text ({len(text)} chars)")
             return None
 
-        # Truncate to API limit if needed
+        # 若需要则截断至 API 限制
         if len(text) > self.MAX_TEXT_LENGTH:
             logger.warning(
                 f"OpenAI TTS: truncating from {len(text)} to {self.MAX_TEXT_LENGTH} chars"
@@ -77,26 +77,26 @@ class OpenAITTS:
         return text
 
     def generate(self, text: str) -> bytes | None:
-        """Generate speech from text.
+        """从文本生成语音。
 
         Args:
-            text: Text to convert to speech
+            text: 要转换为语音的文本
 
         Returns:
-            MP3 audio bytes, or None if text is too short or generation fails
+            MP3 音频字节，若文本过短或生成失败则为 None
 
         Note:
-            - Text shorter than 3 chars returns None
-            - Text longer than 4096 chars is truncated
-            - Errors are logged but not raised - returns None instead
+            - 文本短于 3 个字符返回 None
+            - 文本长于 4096 个字符会被截断
+            - 错误会被记录但不会抛出——而是返回 None
         """
-        # Validate and prepare text
+        # 校验并准备文本
         prepared_text = self._validate_and_prepare_text(text)
         if not prepared_text:
             return None
 
         try:
-            # Call OpenAI TTS API
+            # 调用 OpenAI TTS API
             response = self.client.audio.speech.create(
                 model=self.model,
                 voice=self.voice,
@@ -104,21 +104,21 @@ class OpenAITTS:
                 response_format="mp3",
             )
 
-            # Extract audio bytes from response
+            # 从响应中提取音频字节
             audio_bytes = response.content
             logger.info(f"OpenAI TTS: generated {len(audio_bytes)} bytes")
             return audio_bytes
 
         except Exception as e:
-            # Log error with full traceback for debugging
+            # 记录错误及完整 traceback 以便调试
             logger.error(f"OpenAI TTS failed: {e}", exc_info=True)
-            # Return None to allow graceful degradation
+            # 返回 None 以允许优雅降级
             return None
 
     def get_format(self) -> str:
-        """Get audio format (MIME type).
+        """获取音频格式（MIME 类型）。
 
         Returns:
-            MIME type string for generated audio
+            生成音频的 MIME 类型字符串
         """
         return "audio/mp3"

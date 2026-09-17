@@ -16,8 +16,8 @@ def initialize_database() -> AbstractAsyncContextManager[
     AsyncSqliteSaver | AsyncPostgresSaver | MongoDBSaver | AsyncRedisSaver
 ]:
     """
-    Initialize the appropriate database checkpointer based on configuration.
-    Returns an initialized AsyncCheckpointer instance.
+    根据配置初始化相应的数据库 checkpointer。
+    返回一个已初始化的 AsyncCheckpointer 实例。
     """
     if settings.REDIS_URL:
         return AsyncRedisSaver.from_conn_string(settings.REDIS_URL)
@@ -25,21 +25,21 @@ def initialize_database() -> AbstractAsyncContextManager[
         return get_postgres_saver()
     if settings.DATABASE_TYPE == DatabaseType.MONGO:
         return get_mongo_saver()
-    else:  # Default to SQLite
+    else:  # 默认使用 SQLite
         return get_sqlite_saver()
 
 
 def initialize_store():
     """
-    Initialize the appropriate store based on configuration.
-    Returns an async context manager for the initialized store.
+    根据配置初始化相应的 store。
+    返回已初始化 store 的异步上下文管理器。
     """
     if settings.REDIS_URL:
         return AsyncRedisStore.from_conn_string(settings.REDIS_URL)
     if settings.DATABASE_TYPE == DatabaseType.POSTGRES:
         return get_postgres_store()
-    # TODO: Add Mongo store - https://pypi.org/project/langgraph-store-mongodb/
-    else:  # Default to SQLite
+    # TODO: 添加 Mongo store - https://pypi.org/project/langgraph-store-mongodb/
+    else:  # 默认使用 SQLite
         return get_sqlite_store()
 
 

@@ -1,24 +1,24 @@
-"""Smoke test the deployed Streamlit app end-to-end with a real browser.
+"""用真实浏览器对已部署的 Streamlit 应用进行端到端冒烟测试。
 
-Loads the app, sends one chat message, and verifies an assistant response
-streams back. Streamlit is websocket-driven, so a plain HTTP check only proves
-the page shell loads — this drives the actual chat round-trip (browser ->
-Streamlit -> agent service -> LLM -> back).
+加载应用，发送一条聊天消息，并验证 assistant 回复会流式返回。
+Streamlit 由 websocket 驱动，所以单纯的 HTTP 检查只能证明页面外壳
+加载了——此项驱动实际的聊天往返（浏览器 -> Streamlit -> agent
+服务 -> LLM -> 返回）。
 
-Usage:
+用法：
     uv run --with playwright python scripts/smoke_live_app.py [URL]
 
-The URL defaults to the deployed app, or set LIVE_APP_URL. For local testing:
+URL 默认为已部署的应用，或设置 LIVE_APP_URL。本地测试：
     uv run --with playwright python scripts/smoke_live_app.py http://localhost:8501
 
-Requires a Chromium Playwright can find: either `playwright install chromium`,
-or a pre-provisioned browser via PLAYWRIGHT_BROWSERS_PATH (as in Claude Code
-cloud environments). Exits 0 on pass, 1 on fail, and writes
-smoke_live_app_failure.png next to the CWD on failure for diagnosis.
+需要 Playwright 能找到的 Chromium：要么 `playwright install chromium`，
+要么通过 PLAYWRIGHT_BROWSERS_PATH 预置浏览器（如 Claude Code
+云环境中那样）。通过时退出码 0，失败时退出码 1，并在失败时于
+CWD 旁写入 smoke_live_app_failure.png 以供诊断。
 
-Note: against the deployed app this sends one real message, which costs one
-(cheap) LLM call. Streamlit Community Cloud apps that went to sleep are woken
-by clicking through the wake-up screen; allow a couple of minutes for that.
+Note: 针对已部署的应用，这会发送一条真实消息，消耗一次
+（廉价的）LLM 调用。已休眠的 Streamlit Community Cloud 应用需
+点击唤醒屏幕来唤醒；请为此预留几分钟。
 """
 
 import os
@@ -29,8 +29,8 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 DEFAULT_URL = "https://agent-service-toolkit.streamlit.app/"
-# Stable symlink to the pre-provisioned browser in Claude Code cloud environments,
-# used as a fallback when the installed playwright's own browser build is absent.
+# 指向 Claude Code 云环境中预置浏览器的稳定符号链接，
+# 当已安装的 playwright 自带的浏览器构建缺失时用作回退。
 CLOUD_CHROMIUM = "/opt/pw-browsers/chromium"
 TEST_MESSAGE = "Reply with the single word: pong"
 CHAT_INPUT_SELECTOR = '[data-testid="stChatInput"] textarea'
@@ -54,7 +54,7 @@ def _dump_testids(ctx, label: str) -> None:
 
 
 def dump_diagnostics(page) -> None:
-    """Text diagnostics for a failed run, readable straight from the CI logs."""
+    """针对失败运行的文本诊断信息，可直接从 CI 日志中读取。"""
     try:
         log(f"page title: {page.title()!r}  url: {page.url}")
     except Exception:
@@ -86,21 +86,21 @@ def fail(page, reason: str) -> None:
 
 
 def wake_if_sleeping(page) -> None:
-    """Streamlit Community Cloud shows a wake-up screen for slept apps."""
+    """Streamlit Community Cloud 会为已休眠的应用显示唤醒屏幕。"""
     wake_button = page.get_by_text("get this app back up", exact=False)
     try:
         wake_button.first.wait_for(state="visible", timeout=5_000)
     except PlaywrightTimeoutError:
-        return  # not sleeping
+        return  # 未休眠
     log("app is asleep - clicking wake-up button")
     wake_button.first.click()
 
 
 def find_app_root(page, timeout_s: int):
-    """Return the page or iframe context that holds the app's chat input.
+    """返回持有应用聊天输入框的页面或 iframe 上下文。
 
-    Local runs render the app at the top level; Streamlit Community Cloud wraps it
-    in an iframe that page.locator() can't see into, so probe iframes as well.
+    本地运行会在顶层渲染应用；Streamlit Community Cloud 会将其
+    包裹在 page.locator() 无法看到的 iframe 中，所以也要探测 iframe。
     """
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -132,10 +132,10 @@ def main() -> None:
 
         wake_if_sleeping(page)
 
-        # The chat input appearing means Streamlit booted, the websocket is up,
-        # and the app script ran (it renders after agent/model init). Resolve
-        # whether it lives at the top level (local) or inside the Community Cloud
-        # iframe, and run every app interaction against that context.
+        # 聊天输入框出现意味着 Streamlit 已启动、websocket 已就绪，
+        # 且应用脚本已运行（它在 agent/model 初始化后渲染）。判断
+        # 它位于顶层（本地）还是 Community Cloud 的 iframe 内，
+        # 并针对该上下文运行所有应用交互。
         root = find_app_root(page, WAKE_TIMEOUT_S)
         if root is None:
             fail(page, f"chat input never appeared within {WAKE_TIMEOUT_S}s")
@@ -143,16 +143,16 @@ def main() -> None:
 
         chat_input = root.locator(CHAT_INPUT_SELECTOR)
         messages = root.locator('[data-testid="stChatMessage"]')
-        # The welcome message only renders on an empty thread and disappears on
-        # the rerun after sending, so detection is text-based, not count-based.
+        # 欢迎消息仅在空 thread 上渲染，并在发送后的重跑中消失，
+        # 因此检测基于文本，而非计数。
         pre_send_last = (messages.last.inner_text() or "").strip() if messages.count() else ""
 
         chat_input.fill(TEST_MESSAGE)
         chat_input.press("Enter")
         log("message sent, waiting for assistant response")
 
-        # Expect our message to appear in the thread, followed by a final
-        # assistant message that is non-empty, new, and stable (streaming done).
+        # 预期我们的消息出现在 thread 中，随后是一条最终的
+        # assistant 消息，非空、新增且稳定（流式已完成）。
         deadline = time.monotonic() + RESPONSE_TIMEOUT_S
         last_text, stable_since = "", None
         while time.monotonic() < deadline:

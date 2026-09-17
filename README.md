@@ -50,17 +50,45 @@ docker compose watch
 
 <img src="media/agent_architecture.png" width="600" alt="Agent architecture diagram">
 
+See [docs/01-架构说明.md](docs/01-架构说明.md) for a written walkthrough of the same
+picture: layer responsibilities, the request lifecycle, the two-part memory system,
+how graphs are wired at startup, and the design trade-offs.
+
+### Documentation
+
+The Chinese docs live in `docs/`, flat and numbered `01`–`15` in reading order.
+`01` is the architecture overview, `02`–`07` are provider and feature guides,
+`08`–`09` are design specs, and `10`–`15` are engineering records:
+
+| # | Doc | What it covers |
+|---|---|---|
+| 01 | [架构说明](docs/01-架构说明.md) | Layer responsibilities, request lifecycle, memory wiring, trade-offs |
+| 02 | [AG-UI协议支持](docs/02-AG-UI协议支持.md) | Serving every agent over the AG-UI protocol |
+| 03 | [RAG检索助手](docs/03-RAG检索助手.md) | The Chroma-backed RAG agent and how to build its index |
+| 04 | [GitHub-MCP助手](docs/04-GitHub-MCP助手.md) | The GitHub MCP client agent |
+| 05 | [基于文件的凭证管理](docs/05-基于文件的凭证管理.md) | Working with `privatecredentials/` |
+| 06 | [谷歌模型接入](docs/06-谷歌模型接入.md) | Setting up VertexAI |
+| 07 | [Ollama本地模型接入](docs/07-Ollama本地模型接入.md) | Running against a local model |
+| 08 | [面试加固设计](docs/08-面试加固设计.md) | Design spec: ingest pipeline, SQLite store, real search |
+| 09 | [代码库审查Agent设计](docs/09-代码库审查Agent设计.md) | Design spec for the code-review agent |
+| 10 | [审核与修复总账](docs/10-审核与修复总账.md) | Route matrix, audit findings, fix plan, landing + verification record |
+| 11 | [Agent能力完善方案](docs/11-Agent能力完善方案.md) | loop-agent fixes, the supervisor handoff fix, and its independent review |
+| 12 | [压测与Redis共享存储](docs/12-压测与Redis共享存储.md) | Load testing `/stream`; Redis shared checkpoint/store |
+| 13 | [面试材料与岗位对照](docs/13-面试材料与岗位对照.md) | Resume bullets and the JD capability check |
+| 14 | [注释中文化与审校](docs/14-注释中文化与审校.md) | The comment/docstring Chinese migration and its audit |
+| 15 | [记忆与检索层-对标核实与行动清单](docs/15-记忆与检索层-对标核实与行动清单.md) | Memory/retrieval industry baseline and the P0/P1 action list |
+
 ### Key Features
 
 1. **LangGraph Agent and latest features**: A customizable agent built using the LangGraph framework. Implements the latest LangGraph v1.0 features including human in the loop with `interrupt()`, flow control with `Command`, long-term memory with `Store`, and `langgraph-supervisor`.
 1. **FastAPI Service**: Serves the agent with both streaming and non-streaming endpoints.
 1. **Advanced Streaming**: A novel approach to support both token-based and message-based streaming.
-1. **AG-UI Protocol Support**: Every agent is also served over the [AG-UI protocol](https://docs.ag-ui.com) for connecting AG-UI compatible frontends like CopilotKit - see [docs](docs/AGUI.md).
+1. **AG-UI Protocol Support**: Every agent is also served over the [AG-UI protocol](https://docs.ag-ui.com) for connecting AG-UI compatible frontends like CopilotKit - see [docs](docs/02-AG-UI协议支持.md).
 1. **Streamlit Interface**: Provides a user-friendly chat interface for interacting with the agent, including voice input and output (requires an OpenAI API key plus `VOICE_STT_PROVIDER` / `VOICE_TTS_PROVIDER`; both are unset by default, which disables the feature).
 1. **Multiple Agent Support**: Run multiple agents in the service and call by URL path. Available agents and models are described in `/info`
 1. **Asynchronous Design**: Utilizes async/await for efficient handling of concurrent requests.
 1. **Content Moderation**: Implements Safeguard for content moderation (requires Groq API key).
-1. **RAG Agent**: A basic RAG agent implementation using ChromaDB - see [docs](docs/RAG_Assistant.md).
+1. **RAG Agent**: A basic RAG agent implementation using ChromaDB - see [docs](docs/03-RAG检索助手.md).
 1. **Chat History**: Lists a user's previous conversations per agent via `/threads`, with a "Previous Chats" sidebar in the Streamlit app.
 1. **Feedback Mechanism**: Includes a star-based feedback system integrated with LangSmith.
 1. **Docker Support**: Includes Dockerfiles and a docker compose file for easy development and deployment.
@@ -77,7 +105,7 @@ The repository is structured as follows:
 - `src/client/client.py`: Client to interact with the agent service
 - `src/streamlit_app.py`: Streamlit app providing a chat interface
 - `tests/`: Unit and integration tests
-- `docs/`: Provider and feature guides; project-specific notes live under `docs/notes/`
+- `docs/`: Chinese docs, flat and numbered `01`–`20` in reading order — `01` architecture overview, `02`–`07` provider and feature guides, `08`–`09` design specs, `10`–`20` engineering notes
 - `scripts/`: Setup, smoke-test and local-start helpers
 - `docker/`: Dockerfiles and the optional MongoDB compose file
 - `data/`: Sample corpus used to build the Chroma index
@@ -99,9 +127,9 @@ The repository is structured as follows:
 
 ### Additional setup for specific AI providers
 
-- [Setting up Ollama](docs/Ollama.md)
-- [Setting up VertexAI](docs/VertexAI.md)
-- [Setting up RAG with ChromaDB](docs/RAG_Assistant.md)
+- [Setting up Ollama](docs/07-Ollama本地模型接入.md)
+- [Setting up VertexAI](docs/06-谷歌模型接入.md)
+- [Setting up RAG with ChromaDB](docs/03-RAG检索助手.md)
 
 ### Building or customizing your own agent
 
@@ -113,7 +141,7 @@ To customize the agent for your own use case:
 
 ### Handling Private Credential files
 
-If your agents or chosen LLM require file-based credential files or certificates, the `privatecredentials/` has been provided for your development convenience. All contents, excluding the `.gitkeep` files, are ignored by git and docker's build process. See [Working with File-based Credentials](docs/File_Based_Credentials.md) for suggested use.
+If your agents or chosen LLM require file-based credential files or certificates, the `privatecredentials/` has been provided for your development convenience. All contents, excluding the `.gitkeep` files, are ignored by git and docker's build process. See [Working with File-based Credentials](docs/05-基于文件的凭证管理.md) for suggested use.
 
 ### Docker Setup
 
@@ -235,7 +263,7 @@ The following are a few of the public projects that drew code or inspiration fro
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-**A note on how this repo is maintained:** this is a solo-maintainer project, and issues, PRs, and discussions are triaged on a roughly biweekly cycle with help from an AI maintenance agent. Thanks for your patience if responses take a week or two — I will do my best to respond to truly urgent issues (vulnerability reports, etc.) or in-progress PRs within a few days. The full automation playbooks are versioned in [`docs/maintenance/`](docs/maintenance/) if you're curious how it works.
+**A note on how this repo is maintained:** this is a solo-maintainer project, and issues, PRs, and discussions are triaged on a roughly biweekly cycle. Thanks for your patience if responses take a week or two — I will do my best to respond to truly urgent issues (vulnerability reports, etc.) or in-progress PRs within a few days.
 
 Currently the tests need to be run using the local development without Docker setup. To run the tests for the agent service:
 

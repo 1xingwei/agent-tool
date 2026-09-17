@@ -1,12 +1,11 @@
-"""AG-UI protocol endpoint for the agent service.
+"""agent 服务的 AG-UI 协议端点。
 
-Exposes any agent in the service over the AG-UI protocol (https://docs.ag-ui.com)
-so it can be used with AG-UI compatible frontends like CopilotKit. The
-LangGraph -> AG-UI event translation is handled by the official `ag-ui-langgraph`
-package; this module only wires it into the service's agent registry, auth, and
-tracing.
+把服务里的任意 agent 通过 AG-UI 协议（https://docs.ag-ui.com）暴露出去，
+以便接入 CopilotKit 等兼容 AG-UI 的前端。LangGraph -> AG-UI 的事件转换
+由官方 `ag-ui-langgraph` 包完成；本模块只负责把它接进服务的 agent 注册表、
+鉴权与追踪。
 
-See docs/AGUI.md for usage, including how to connect a client.
+用法（含如何接入客户端）见 docs/02-AG-UI协议支持.md。
 """
 
 import logging
@@ -30,18 +29,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agui")
 
-# Managed by the protocol (thread_id comes from RunAgentInput) or the checkpointer,
-# so clients may not override them via forwardedProps.configurable.
+# 由协议管理（thread_id 来自 RunAgentInput）或 checkpointer 管理，
+# 因此客户端不能通过 forwardedProps.configurable 覆盖它们。
 RESERVED_CONFIGURABLE_KEYS = {"thread_id", "checkpoint_id", "checkpoint_ns"}
 
 
 def _base_config(input_data: RunAgentInput, agent_id: str) -> RunnableConfig:
-    """Build the base RunnableConfig for an AG-UI run.
+    """为一次 AG-UI 运行构建基础 RunnableConfig。
 
-    Clients can pass configurable values (e.g. `model`, `user_id`, or custom agent
-    config) in `forwardedProps.configurable` - the AG-UI equivalent of the vanilla
-    API's `model` / `user_id` / `agent_config` fields. `thread_id` is taken from
-    the AG-UI input by the `ag-ui-langgraph` package itself.
+    客户端可以在 `forwardedProps.configurable` 中传入可配置值（例如 `model`、`user_id` 或自定义 agent
+    配置）——这相当于原生 API 的 `model` / `user_id` / `agent_config` 字段。`thread_id` 由
+    `ag-ui-langgraph` 包自身从 AG-UI 输入中获取。
     """
     forwarded: dict[str, Any] = input_data.forwarded_props or {}
     configurable = forwarded.get("configurable") or {}
@@ -65,7 +63,7 @@ def _base_config(input_data: RunAgentInput, agent_id: str) -> RunnableConfig:
 
     return RunnableConfig(
         configurable=configurable,
-        # Recorded in checkpoint metadata so AG-UI threads show up in /threads too.
+        # 记录在 checkpoint 元数据中，使 AG-UI thread 也能出现在 /threads 中。
         metadata={"user_id": user_id, "agent_id": agent_id},
         callbacks=callbacks,
     )
@@ -78,14 +76,13 @@ async def _event_stream(
     config: RunnableConfig,
     encoder: EventEncoder,
 ) -> AsyncGenerator[str, None]:
-    # A new LangGraphAgent per request: it holds per-run state and is cheap to build.
+    # 每个请求新建一个 LangGraphAgent：它持有每次运行的状态，且构建开销很低。
     agent = LangGraphAgent(name=agent_id, graph=graph, config=config)  # type: ignore[arg-type]
     async for event in agent.run(input_data):
-        # Don't forward RAW passthrough events. Standard AG-UI clients ignore them,
-        # and they expose server-side internals - including fully rendered prompts
-        # from on_chat_model_start - to the caller. Remove this filter only if the
-        # endpoint is consumed by a trusted middle layer and you want the full
-        # event firehose (e.g. for the AG-UI Event Inspector).
+        # 不要转发 RAW 透传事件。标准 AG-UI 客户端会忽略它们，
+        # 而且它们会向调用方暴露服务端内部信息——包括来自 on_chat_model_start 的完整渲染提示词。
+        # 仅当该端点由受信任的中间层消费、且你需要完整的事件洪流
+        # （例如用于 AG-UI Event Inspector）时，才移除该过滤器。
         if event.type == EventType.RAW:
             continue
         yield encoder.encode(event)
@@ -97,11 +94,11 @@ async def agui_run(
     input_data: RunAgentInput, request: Request, agent_id: str = DEFAULT_AGENT
 ) -> StreamingResponse:
     """
-    Run an agent over the AG-UI protocol, streaming AG-UI events via SSE.
+    通过 AG-UI 协议运行 agent，以 SSE 流式发送 AG-UI 事件。
 
-    Point an AG-UI client (e.g. CopilotKit's runtime or HttpAgent) at this endpoint.
-    Use the same threadId across runs to continue a conversation - threads are
-    persisted in the service's checkpointer and shared with the vanilla API.
+    将 AG-UI 客户端（例如 CopilotKit 的 runtime 或 HttpAgent）指向此端点。
+    在多次运行间使用相同的 threadId 以延续对话——thread 会
+    持久化到服务的 checkpointer 中，并与原生 API 共享。
     """
     try:
         graph: AgentGraph = get_agent(agent_id)

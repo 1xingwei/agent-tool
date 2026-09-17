@@ -2,25 +2,14 @@ import json
 from unittest.mock import patch
 
 import pytest
-from langchain_core.language_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, BaseMessage, ToolCall
+from langchain_core.messages import AIMessage, ToolCall
 from langgraph.checkpoint.memory import MemorySaver
 
 from schema import ChatMessage, StreamInput
 
 
-class FakeToolModel(FakeMessagesListChatModel):
-    """A fake model that supports tool calls."""
-
-    def __init__(self, responses: list[BaseMessage]):
-        super().__init__(responses=responses)
-
-    def bind_tools(self, tools, **kwargs):
-        return self
-
-
 @pytest.mark.asyncio
-async def test_three_layer_supervisor_hierarchy_agent_with_fake_model():
+async def test_three_layer_supervisor_hierarchy_agent_with_fake_model(fake_tool_model):
     responses = [
         AIMessage(
             content="",
@@ -35,16 +24,14 @@ async def test_three_layer_supervisor_hierarchy_agent_with_fake_model():
         AIMessage(
             content="", tool_calls=[ToolCall(name="add", args={"a": 2, "b": 3}, id="call-3")]
         ),
-        AIMessage(content="2+3 is 5"),  # This is the response from the math expert,
-        AIMessage(
-            content="The Maths Expert says the answer is 5."
-        ),  # This is the response from the research expert
+        AIMessage(content="2+3 is 5"),  # 这是数学专家的响应，
+        AIMessage(content="The Maths Expert says the answer is 5."),  # 这是研究专家的响应
         AIMessage(content="The result is 5."),
     ]
 
     from agents.langgraph_supervisor_hierarchy_agent import workflow
 
-    agent = workflow(FakeToolModel(responses)).compile(checkpointer=MemorySaver())
+    agent = workflow(fake_tool_model(responses)).compile(checkpointer=MemorySaver())
 
     with patch("service.service.get_agent", return_value=agent):
         from service.service import message_generator
@@ -53,7 +40,7 @@ async def test_three_layer_supervisor_hierarchy_agent_with_fake_model():
         async for chunk in message_generator(
             StreamInput(message="Add 2 and 3"), agent_id="langgraph-supervisor-hierarchy-agent"
         ):
-            if chunk and chunk.strip() != "data: [DONE]":  # Skip [DONE] message
+            if chunk and chunk.strip() != "data: [DONE]":  # 跳过 [DONE] 消息
                 chat_message = json.loads(chunk.lstrip("data: "))["content"]
                 messages.append(ChatMessage.model_validate(chat_message))
 

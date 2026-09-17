@@ -1,4 +1,4 @@
-"""Tests for agent loading functionality."""
+"""agent 加载功能的测试。"""
 
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -9,19 +9,19 @@ from agents.lazy_agent import LazyLoadingAgent
 
 
 class TestAgentLoading:
-    """Test agent loading functionality."""
+    """测试 agent 加载功能。"""
 
     @pytest.mark.asyncio
     async def test_load_agent_static_agent(self):
-        """Test loading a static agent (no-op)."""
-        # Static agents don't need loading
+        """测试加载静态 agent（空操作）。"""
+        # 静态 agent 无需加载
         await load_agent("chatbot")
-        # Should not raise any exceptions
+        # 不应抛出任何异常
 
     @pytest.mark.asyncio
     async def test_load_agent_lazy_agent(self):
-        """Test loading a lazy agent."""
-        # Mock the GitHub MCP agent
+        """测试加载惰性 agent。"""
+        # 模拟 GitHub MCP agent
         mock_agent = Mock(spec=LazyLoadingAgent)
         mock_agent.load = AsyncMock()
 
@@ -32,17 +32,17 @@ class TestAgentLoading:
 
     @pytest.mark.asyncio
     async def test_load_agent_nonexistent(self):
-        """Test loading a non-existent agent."""
+        """测试加载不存在的 agent。"""
         with pytest.raises(KeyError):
             await load_agent("nonexistent-agent")
 
     def test_get_agent_static_agent(self):
-        """Test getting a static agent."""
+        """测试获取静态 agent。"""
         agent = get_agent("chatbot")
         assert agent is not None
 
     def test_get_agent_lazy_agent_not_loaded(self):
-        """Test getting a lazy agent that hasn't been loaded."""
+        """测试获取尚未加载的惰性 agent。"""
         mock_agent = Mock(spec=LazyLoadingAgent)
         mock_agent._loaded = False
 
@@ -53,7 +53,7 @@ class TestAgentLoading:
                 get_agent("test-lazy-agent")
 
     def test_get_agent_lazy_agent_loaded(self):
-        """Test getting a lazy agent that has been loaded."""
+        """测试获取已加载的惰性 agent。"""
         mock_agent = Mock(spec=LazyLoadingAgent)
         mock_agent._loaded = True
         mock_graph = Mock()
@@ -66,6 +66,6 @@ class TestAgentLoading:
         mock_agent.get_graph.assert_called_once()
 
     def test_get_agent_nonexistent(self):
-        """Test getting a non-existent agent."""
+        """测试获取不存在的 agent。"""
         with pytest.raises(KeyError):
             get_agent("nonexistent-agent")

@@ -11,9 +11,9 @@ from core import get_model, settings
 
 
 class AgentState(MessagesState, total=False):
-    """`total=False` is PEP589 specs.
+    """`total=False` 是 PEP589 规范。
 
-    documentation: https://typing.readthedocs.io/en/latest/spec/typeddict.html#totality
+    文档：https://typing.readthedocs.io/en/latest/spec/typeddict.html#totality
     """
 
 
@@ -30,7 +30,7 @@ async def acall_model(state: AgentState, config: RunnableConfig) -> AgentState:
     model_runnable = wrap_model(m)
     response = await model_runnable.ainvoke(state, config)
 
-    # We return a list, because this will get added to the existing list
+    # 返回列表，因为这会追加到现有列表
     return {"messages": [response]}
 
 
@@ -50,7 +50,7 @@ async def bg_task(state: AgentState, writer: StreamWriter) -> AgentState:
     return {"messages": []}
 
 
-# Define the graph
+# 定义图
 agent = StateGraph(AgentState)
 agent.add_node("model", acall_model)
 agent.add_node("bg_task", bg_task)

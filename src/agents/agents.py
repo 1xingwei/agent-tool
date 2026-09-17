@@ -20,11 +20,11 @@ from schema import AgentInfo
 
 DEFAULT_AGENT = "research-assistant"
 
-# Type alias to handle LangGraph's different agent patterns
-# - @entrypoint functions return Pregel
-# - StateGraph().compile() returns CompiledStateGraph
-AgentGraph = CompiledStateGraph | Pregel  # What get_agent() returns (always loaded)
-AgentGraphLike = CompiledStateGraph | Pregel | LazyLoadingAgent  # What can be stored in registry
+# 用于处理 LangGraph 不同 agent 模式的类型别名
+# - @entrypoint 函数返回 Pregel
+# - StateGraph().compile() 返回 CompiledStateGraph
+AgentGraph = CompiledStateGraph | Pregel  # get_agent() 返回的内容（始终加载）
+AgentGraphLike = CompiledStateGraph | Pregel | LazyLoadingAgent  # 可存储在注册表中的内容
 
 
 @dataclass
@@ -75,23 +75,23 @@ agents: dict[str, Agent] = {
 
 
 async def load_agent(agent_id: str) -> None:
-    """Load lazy agents if needed."""
+    """按需加载惰性 agent。"""
     graph_like = agents[agent_id].graph_like
     if isinstance(graph_like, LazyLoadingAgent):
         await graph_like.load()
 
 
 def get_agent(agent_id: str) -> AgentGraph:
-    """Get an agent graph, loading lazy agents if needed."""
+    """获取 agent 图，按需加载惰性 agent。"""
     agent_graph = agents[agent_id].graph_like
 
-    # If it's a lazy loading agent, ensure it's loaded and return its graph
+    # 如果是惰性加载 agent，确保其已加载并返回其图
     if isinstance(agent_graph, LazyLoadingAgent):
         if not agent_graph._loaded:
             raise RuntimeError(f"Agent {agent_id} not loaded. Call load() first.")
         return agent_graph.get_graph()
 
-    # Otherwise return the graph directly
+    # 否则直接返回图
     return agent_graph
 
 

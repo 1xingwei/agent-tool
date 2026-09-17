@@ -1,10 +1,9 @@
-"""Unit tests for /threads against a fake checkpointer.
+"""针对 fake checkpointer 的 /threads 单元测试。
 
-Covers only what a real checkpointer can't be made to do on demand: the row and page
-caps (which need more checkpoints than it's worth seeding), a checkpointer that returns
-rows the filter should have excluded, a missing timestamp, and a failing query. Behaviour
-a real database does exercise - filtering, ordering, titles, limits, subgraph threads -
-is tested against SQLite in test_threads_sqlite.py instead of against this fake.
+仅覆盖无法让真实 checkpointer 按需执行的情况：行数与页数上限（需要比值得预置的更多
+checkpoint）、返回本应被过滤器排除的行的 checkpointer、缺失时间戳，以及查询失败。真实数据库
+能够覆盖的行为——过滤、排序、标题、限制、子图 thread——改在 test_threads_sqlite.py 中针对
+SQLite 测试，而非针对此 fake。
 """
 
 from unittest.mock import AsyncMock, patch
@@ -21,11 +20,10 @@ class FakeCheckpointTuple:
 
 
 class FakeCheckpointer:
-    """A checkpointer with the semantics /threads relies on.
+    """具有 /threads 所依赖语义的 checkpointer。
 
-    Checkpoints are globally ordered by checkpoint_id, `alist` applies the metadata
-    filter as exact matches, and each thread's first checkpoint is written at step -1
-    the way LangGraph writes an input checkpoint.
+    checkpoint 按 checkpoint_id 全局排序，`alist` 将元数据过滤器作为精确匹配应用，每个 thread 的
+    首个 checkpoint 以 step -1 写入，与 LangGraph 写入输入 checkpoint 的方式一致。
     """
 
     def __init__(self):
@@ -58,7 +56,7 @@ class FakeCheckpointer:
             )
 
         add(-1, {"__start__": {"messages": [HumanMessage(content=title)]}}, "2024-01-01T00:00:00Z")
-        # Subgraph runs write their own head, inheriting the parent run's metadata.
+        # 子图运行写入自己的 head，继承父运行的元数据。
         for _ in range(subgraph_heads):
             add(-1, {"__start__": {}}, "2024-01-01T00:00:00Z")
 
@@ -102,7 +100,7 @@ class FakeCheckpointer:
 
 
 def test_threads_without_checkpointer_returns_empty(test_client, mock_agent) -> None:
-    """Test that /threads returns an empty list when the agent has no checkpointer configured."""
+    """测试当 agent 未配置 checkpointer 时 /threads 返回空列表。"""
     mock_agent.checkpointer = None
 
     response = test_client.get("/threads", params={"user_id": "user-123", "limit": 10})
@@ -112,10 +110,10 @@ def test_threads_without_checkpointer_returns_empty(test_client, mock_agent) -> 
 
 
 def test_threads_filters_by_agent_id(test_client) -> None:
-    """Test that /{agent_id}/threads scopes the checkpointer query to the requested agent.
+    """测试 /{agent_id}/threads 将 checkpointer 查询限定到所请求的 agent。
 
-    The agent_id in the filter is the cross-agent isolation guarantee, so assert on the
-    query itself and not just on the threads that come back.
+    过滤器中的 agent_id 是跨 agent 隔离的保证，因此应针对查询本身断言，而不仅仅针对返回的
+    thread。
     """
     checkpointer = FakeCheckpointer()
     checkpointer.add_thread("thread-mine", agent_id="custom-agent", title="Mine")
@@ -149,7 +147,7 @@ def test_threads_filters_by_agent_id(test_client) -> None:
 
 @pytest.mark.parametrize("limit", [0, -1, 101, 999999])
 def test_threads_rejects_out_of_range_limit(test_client, mock_agent, limit: int) -> None:
-    """Test that /threads bounds limit so a client can't ask for an unbounded scan."""
+    """测试 /threads 会限制 limit，使客户端无法请求无界扫描。"""
     mock_agent.checkpointer = FakeCheckpointer()
 
     response = test_client.get("/threads", params={"user_id": "user-123", "limit": limit})
@@ -158,7 +156,7 @@ def test_threads_rejects_out_of_range_limit(test_client, mock_agent, limit: int)
 
 
 def test_threads_skips_checkpoints_with_mismatched_metadata(test_client, mock_agent) -> None:
-    """Test that a checkpointer ignoring the filter can't leak another user's threads."""
+    """测试忽略过滤条件的 checkpointer 无法泄露其他用户的 thread。"""
 
     class LeakyCheckpointer(FakeCheckpointer):
         async def alist(self, config, *, filter=None, before=None, limit=None):
@@ -179,10 +177,10 @@ def test_threads_skips_checkpoints_with_mismatched_metadata(test_client, mock_ag
 
 
 def test_threads_pages_past_subgraph_heads(test_client, mock_agent) -> None:
-    """Test that subgraph head rows don't crowd real threads out of the result.
+    """测试子图 head 行不会把真实 thread 挤出结果。
 
-    An agent with subgraphs writes several head rows per thread, so a single page of
-    rows covers far fewer threads than the caller asked for.
+    带子图的 agent 每个 thread 会写入多行 head，因此一页行数覆盖的
+    thread 数量远少于调用方请求的数量。
     """
     checkpointer = FakeCheckpointer()
     for index in range(30):
@@ -199,7 +197,7 @@ def test_threads_pages_past_subgraph_heads(test_client, mock_agent) -> None:
 
 
 def test_threads_bounds_total_rows_scanned(test_client, mock_agent) -> None:
-    """Test that head paging stops at the row cap instead of scanning the whole table."""
+    """测试 head 分页在达到行数上限时停止，而不是扫描整张表。"""
     checkpointer = FakeCheckpointer()
     for index in range(60):
         checkpointer.add_thread(f"thread-{index:02d}", title=f"Thread {index}", subgraph_heads=9)
@@ -217,7 +215,7 @@ def test_threads_bounds_total_rows_scanned(test_client, mock_agent) -> None:
 
 
 def test_threads_tolerates_missing_timestamp(test_client, mock_agent) -> None:
-    """Test that /threads returns a thread whose tip checkpoint has no timestamp."""
+    """测试 /threads 会返回 tip checkpoint 没有时间戳的 thread。"""
     checkpointer = FakeCheckpointer()
     checkpointer.add_thread("thread-no-ts", title="No timestamp", tip_ts=None)
     mock_agent.checkpointer = checkpointer

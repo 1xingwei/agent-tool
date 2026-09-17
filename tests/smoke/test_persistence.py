@@ -4,26 +4,25 @@ import pytest
 
 from client import AgentClient
 
-# Shared with scripts/smoke_test.sh via the environment so the script can verify
-# this exact thread's checkpoints landed in the intended backend. Falls back to a
-# fixed id when the test is run on its own.
+# 通过环境变量与 scripts/smoke_test.sh 共享，使脚本可以验证
+# 该 thread 的 checkpoint 确实落入了预期的后端。单独运行测试时
+# 回退到固定 id。
 THREAD_ID = os.environ.get("SMOKE_THREAD_ID", "smoke-test-persistence-thread")
 
 
 @pytest.mark.docker
 def test_checkpointer_persists_history():
-    """Confirm the configured checkpointer persists conversation state across turns.
+    """确认配置的 checkpointer 能跨轮次持久化对话状态。
 
-    Backend-agnostic: exercises whichever DATABASE_TYPE the service was started
-    with. scripts/smoke_test.sh runs this against both postgres and mongo, then
-    separately verifies the data actually landed in that backend (this test alone
-    can't tell the backends apart, since any working checkpointer would pass).
-    Requires a running service (USE_FAKE_MODEL=true) backed by a live database.
+    与后端无关：测试服务启动时所用的 DATABASE_TYPE。scripts/smoke_test.sh
+    会针对 postgres 和 mongo 分别运行此测试，然后单独验证数据确实落入了
+    该后端（仅凭此测试无法区分后端，因为任何可用的 checkpointer 都会通过）。
+    需要由实时数据库支撑的运行中服务（USE_FAKE_MODEL=true）。
 
-    Uses the default agent for both invoke and get_history. Since /history is
-    agent-aware and AgentClient scopes it to the client's selected agent, the same
-    graph that created the thread also reads it back — which is what makes the
-    round-trip work now that each agent is a distinct graph with its own state.
+    invoke 和 get_history 均使用默认 agent。由于 /history 是 agent 感知的，
+    且 AgentClient 会将其限定到客户端选定的 agent，创建 thread 的同一个图
+    也会读回它——这正是往返能够成立的原因，因为现在每个 agent 都是拥有
+    自身状态的独立图。
     """
     client = AgentClient("http://localhost:8080")
 
@@ -39,12 +38,12 @@ def test_checkpointer_persists_history():
 
 @pytest.mark.docker
 def test_threads_lists_user_threads():
-    """Confirm /threads enumerates threads through the configured checkpointer.
+    """确认 /threads 通过配置的 checkpointer 枚举 thread。
 
-    The unit tests use a fake checkpointer and the SQLite integration tests only
-    prove the SQLite driver, so this is the check that the metadata filter
-    (including the step -1 head lookup) behaves the same on Postgres and Mongo.
-    Requires a running service (USE_FAKE_MODEL=true) backed by a live database.
+    单元测试使用 fake checkpointer，SQLite 集成测试只能证明 SQLite 驱动，
+    因此这里检查 metadata 过滤条件（包括 step -1 的 head 查找）在 Postgres
+    和 Mongo 上行为一致。需要由实时数据库支撑的运行中服务
+    （USE_FAKE_MODEL=true）。
     """
     client = AgentClient("http://localhost:8080")
     user_id = f"{THREAD_ID}-user"
@@ -58,8 +57,8 @@ def test_threads_lists_user_threads():
     client.invoke("Not mine", thread_id=f"{THREAD_ID}-other", user_id=other_user_id, model="fake")
 
     threads = client.get_user_threads(user_id=user_id).threads
-    # Most recently updated first; the single-turn thread must be listed even though
-    # it never advanced past its head checkpoint.
+    # 最近更新的排在最前；单轮 thread 即使从未越过其 head checkpoint，
+    # 也必须被列出。
     assert [t.thread_id for t in threads] == [multi_turn, single_turn]
     assert [t.title for t in threads] == ["First turn", "Only turn"]
     assert all(t.updated_at for t in threads)
