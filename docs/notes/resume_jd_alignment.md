@@ -15,7 +15,7 @@
 2、工具层实现完整执行链路：联网搜索、命令行执行、代码库只读审查（git log/diff、文件检索）等真实工具；对接 MCP 协议（基于 langchain-mcp-adapters 构建 GitHub MCP 客户端，动态加载远端工具）；工具侧做路径穿越防护、固定 git 参数防注入、30s 超时与最大步骤数兜底，防范 Agent 死循环与成本失控；
 3、实现 Agent 记忆与上下文管理：checkpointer 存储会话状态、Store 存储跨会话长程记忆，支持 SQLite / Postgres / MongoDB / Redis 多后端一键切换，任意请求可续上下文；中断-恢复场景下依赖 checkpointer 保证状态一致性；
 4、服务端针对高并发做了分层压测（50/200/1000 并发），量化服务层与 LLM 供应商的延迟占比，发现并定位多 worker 下 SQLite checkpoint 文件锁竞争导致的 P95 击穿（44.9s），据此设计并验证 Redis 共享存储迁移方案，给出多副本部署路径；
-5、工程质量：209 个单测用例全绿，pytest + pytest-cov 覆盖统计、ruff 静态检查、GitHub Actions CI、pre-commit 全链路接入；对接 LangSmith / Langfuse 观测平台，可追踪 Agent 决策链路与工具调用轨迹。
+5、工程质量：214 个单测用例全绿（另有 5 个 `@pytest.mark.network` 联网用例默认跳过，需 `--run-network` 触发），pytest + pytest-cov 覆盖统计、ruff 静态检查、GitHub Actions CI、pre-commit 全链路接入；对接 LangSmith / Langfuse 观测平台，可追踪 Agent 决策链路与工具调用轨迹。
 
 ## JD 能力核查
 
@@ -38,3 +38,31 @@
 
 - 压测与 SQLite 击穿是有实测数据的真故事，是全场最硬的资历。
 - RAG、MCP Server、Redis 集成三处是追问风险点：答不上细节就不要在简历亮出来，或先补上再过面。
+
+### 本机未启用的能力（被追问时如实回答）
+
+下面这些能力代码都在、也接了线，但本机缺 key 或按设计留空，**跑起来看不到效果**。
+不要用「我用过」的口径回答，否则一演示就穿帮：
+
+| 能力 | 本机状态 | 原因 |
+|---|---|---|
+| safeguard 内容安全过滤 | 空转 | `GROQ_API_KEY` 未配，`Safeguard` 恒返回 SAFE |
+| 语音输入 / 输出 | 关闭 | `OPENAI_API_KEY` 为空；`VOICE_*_PROVIDER` 按设计留空即为关闭 |
+| RAG 知识问答 | 跑不通 | 需 OpenAI embedding key |
+| 天气工具 | 未注册 | `OPENWEATHERMAP_API_KEY` 未配，工具不进 agent 的工具列表 |
+
+### 可以在面试里讲的「真问题」
+
+这两处是真实环境下发现、定位并修掉的缺陷，比功能罗列更有说服力：
+
+1. **两个 supervisor agent 的转交必 500** —— DeepSeek thinking 模式要求历史里每个
+   content-only assistant 消息回传 `reasoning_content`，而 `langgraph_supervisor`
+   恰恰把子 Agent 的终答拼成这样一条消息，`ChatOpenAI` 又从不捕获该字段；
+   `output_mode` / `add_handoff_back_messages` 两种调参都无效（已实测否证）。
+2. **code-reviewer 的 git 工具在本机必崩** —— `subprocess.run(text=True)` 未指定
+   `encoding`，服务进程按 cp936 解码 UTF-8 的 git 输出，reader 线程抛
+   `UnicodeDecodeError` 后 `stdout` 变 `None`，`.strip()` 直接 500。
+   测试拦不住是因为**测试环境 ≠ 运行环境**（测试提交信息全 ASCII + 继承 `PYTHONUTF8=1`）。
+
+两者的成因、否证过程与修法已记入 `docs/notes/agent_capability_plan.md`
+与 `docs/notes/project_audit.md`。
