@@ -15,6 +15,13 @@ def _git(repo_path: str, args: list[str]) -> str:
         cwd=repo_path,
         capture_output=True,
         text=True,
+        # Without an explicit encoding, text mode decodes with
+        # locale.getpreferredencoding() -- cp936 on a Windows service process. Git
+        # emits UTF-8, so a non-ASCII commit message raises UnicodeDecodeError in
+        # the reader thread, which leaves stdout as None and turns the caller's
+        # .strip() into an AttributeError (see docs/notes/project_audit.md).
+        encoding="utf-8",
+        errors="replace",
         timeout=30,
         check=False,
     )

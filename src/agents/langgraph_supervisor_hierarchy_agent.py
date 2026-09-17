@@ -1,10 +1,13 @@
 from langchain.agents import create_agent
 from langgraph_supervisor import create_supervisor
 
-from agents.langgraph_supervisor_agent import add, multiply, web_search
-from core import get_model, settings
+from agents.langgraph_supervisor_agent import add, multiply
+from agents.tools import web_search
+from core import get_supervisor_model, settings
 
-model = get_model(settings.DEFAULT_MODEL)
+# Handoffs stitch sub-agent answers into this graph's history, which DeepSeek's
+# thinking mode rejects -- get_supervisor_model documents why.
+model = get_supervisor_model(settings.DEFAULT_MODEL)
 
 
 def workflow(chosen_model):
@@ -34,7 +37,7 @@ def workflow(chosen_model):
         [research_agent],
         model=chosen_model,
         prompt=(
-            "You are a team supervisor managing a research expert with math capabilities."
+            "You are a team supervisor managing a research expert with math capabilities. "
             "For current events, use research_agent. "
         ),
         add_handoff_back_messages=True,

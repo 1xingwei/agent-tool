@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Literal
 
@@ -12,6 +13,8 @@ from langgraph.store.base import BaseStore
 from agents.code.tools import file_search, git_diff, git_log, read_file
 from agents.safeguard import Safeguard, SafeguardOutput, SafetyAssessment
 from core import get_model, settings
+
+logger = logging.getLogger(__name__)
 
 
 class AgentState(MessagesState, total=False):
@@ -72,13 +75,19 @@ async def acall_model(state: AgentState, config: RunnableConfig) -> AgentState:
 
 
 async def remember_review(
-    state: AgentState, config: RunnableConfig, store: BaseStore
+    state: AgentState, config: RunnableConfig, store: BaseStore | None
 ) -> AgentState:
     """Persist the final review conclusion to the store, keyed per repo."""
     last_message = state["messages"][-1]
     if not isinstance(last_message, AIMessage):
         return {"messages": []}
     if last_message.tool_calls:
+        return {"messages": []}
+    if store is None:
+        # The store is only injected when the graph runs under the service's
+        # lifespan. Invoking it standalone (`langgraph dev`, run_agent.py, a unit
+        # test) passes None, and a bare `store.aput` would raise AttributeError.
+        logger.warning("No store injected; the review conclusion was not persisted.")
         return {"messages": []}
     user_id = config["configurable"].get("user_id", "anonymous")
     namespace = ("code-reviewer", user_id)

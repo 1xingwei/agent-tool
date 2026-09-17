@@ -46,6 +46,37 @@ def test_git_log_and_diff(tmp_path) -> None:
     assert "add a.py" in diff and "+x = 1" in diff
 
 
+def test_git_log_decodes_non_ascii_commits(tmp_path, monkeypatch) -> None:
+    """Git emits UTF-8, but the service process decodes with the locale (cp936 on
+    Windows), which blanked stdout and crashed every git_log call on this repo.
+
+    Asserting the text alone is not enough: pytest inherits PYTHONUTF8=1 from the
+    shell and CI runs under a UTF-8 locale, so both would decode correctly even
+    without the fix. The explicit encoding is pinned instead.
+    """
+    _make_repo(tmp_path, {"a.py": "x = 1\n"})
+    subprocess.run(
+        ["git", "commit", "-q", "--allow-empty", "-m", "修复：中文提交信息"],
+        cwd=str(tmp_path),
+        check=True,
+    )
+
+    calls: list[dict] = []
+    real_run = subprocess.run
+
+    def spy(*args, **kwargs):
+        calls.append(kwargs)
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(tools.subprocess, "run", spy)
+    out = tools.git_log.func(repo_path=str(tmp_path))
+
+    assert "修复：中文提交信息" in out
+    assert calls, "expected _git to shell out to git"
+    assert calls[0].get("encoding") == "utf-8"
+    assert calls[0].get("errors") == "replace"
+
+
 def test_file_search_and_read(tmp_path) -> None:
     _make_repo(tmp_path, {"mod/b.py": "def target(): pass\n"})
     hits = tools.file_search.func(repo_path=str(tmp_path), content_pattern="def target")
@@ -73,3 +104,10 @@ async def test_remember_review_writes_store(tmp_path) -> None:
     values = list(store.search(("code-reviewer", "u1")))
     assert len(values) == 1
     assert values[0].value["conclusion"] == "review done"
+
+
+@pytest.mark.asyncio
+async def test_remember_review_without_store_is_a_noop() -> None:
+    """Standalone invocations (`langgraph dev`, run_agent.py) pass store=None."""
+    state = {"messages": [AIMessage(content="review done")]}
+    assert await remember_review(state, {"configurable": {}}, None) == {"messages": []}

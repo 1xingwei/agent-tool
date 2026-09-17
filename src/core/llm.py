@@ -152,3 +152,31 @@ def get_model(model_name: AllModelEnum, /) -> ModelT:
         return FakeToolModel(responses=["This is a test response from the fake model."])
 
     raise ValueError(f"Unsupported model: {model_name}")
+
+
+@cache
+def get_supervisor_model(model_name: AllModelEnum, /) -> ModelT:
+    """Return a model for supervisor graphs, with DeepSeek thinking mode disabled.
+
+    DeepSeek's thinking mode requires every content-only assistant message in the
+    request history to carry back the `reasoning_content` it was generated with.
+    `langgraph_supervisor` stitches each sub-agent's final answer into the parent
+    history as exactly such a message, and `ChatOpenAI` never captures that field,
+    so every handoff dies with:
+
+        400 - The reasoning_content in the thinking mode must be passed back to the API.
+
+    Turning thinking off removes the requirement, which is the only lever available
+    on our side of the protocol (see docs/notes/agent_capability_plan.md, route A).
+
+    Two deliberate details:
+
+    - `model_copy` instead of a fresh constructor call, so the cached instance every
+      other agent shares keeps thinking enabled.
+    - DeepSeek only. Other providers reject unknown request fields, and this
+      parameter would travel to their APIs verbatim.
+    """
+    model = get_model(model_name)
+    if model_name in DeepseekModelName and isinstance(model, ChatOpenAI):
+        return model.model_copy(update={"extra_body": {"thinking": {"type": "disabled"}}})
+    return model
