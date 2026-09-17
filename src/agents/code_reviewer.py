@@ -71,7 +71,9 @@ async def acall_model(state: AgentState, config: RunnableConfig) -> AgentState:
     return {"messages": [response]}
 
 
-async def remember_review(state: AgentState, config: RunnableConfig, store: BaseStore) -> AgentState:
+async def remember_review(
+    state: AgentState, config: RunnableConfig, store: BaseStore
+) -> AgentState:
     """Persist the final review conclusion to the store, keyed per repo."""
     last_message = state["messages"][-1]
     if not isinstance(last_message, AIMessage):
@@ -137,7 +139,9 @@ def pending_tool_calls(state: AgentState) -> Literal["tools", "done"]:
     return "done"
 
 
-agent.add_conditional_edges("model", pending_tool_calls, {"tools": "tools", "done": "remember_review"})
+agent.add_conditional_edges(
+    "model", pending_tool_calls, {"tools": "tools", "done": "remember_review"}
+)
 
 agent.add_edge("remember_review", END)
 

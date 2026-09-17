@@ -172,9 +172,7 @@ def test_invoke_interrupt(test_client, mock_agent) -> None:
 
 
 @patch("service.service.LangsmithClient")
-def test_feedback(
-    mock_client: langsmith.Client, test_client, monkeypatch
-) -> None:
+def test_feedback(mock_client: langsmith.Client, test_client, monkeypatch) -> None:
     monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
     ls_instance = mock_client.return_value
     ls_instance.create_feedback.return_value = None

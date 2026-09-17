@@ -44,6 +44,40 @@ calculator: BaseTool = tool(calculator_func)
 calculator.name = "Calculator"
 
 
+def web_search_func(query: str, max_results: int = 5) -> str:
+    """Searches the web using DuckDuckGo and returns top results.
+
+    Args:
+        query (str): The search query.
+        max_results (int, optional): Max results to return. Defaults to 5.
+
+    Returns:
+        str: Formatted search results.
+    """
+    from ddgs import DDGS
+
+    proxy = settings.WEB_SEARCH_PROXY
+    backends = settings.WEB_SEARCH_BACKENDS.split(",")
+    last_error = ""
+    for backend in backends:
+        for _ in range(2):
+            try:
+                with DDGS(proxy=proxy or None, timeout=10) as ddgs:
+                    results = ddgs.text(query, max_results=max_results, backend=backend)
+                if results:
+                    return "\n\n".join(
+                        f"{i}. {r.get('title', '')}\n{r.get('href', '')}\n{r.get('body', '')}"
+                        for i, r in enumerate(results, 1)
+                    )
+            except Exception as e:
+                last_error = str(e)
+    return f"No search results found. {last_error}"
+
+
+web_search: BaseTool = tool(web_search_func)
+web_search.name = "WebSearch"
+
+
 # Format retrieved documents
 def format_contexts(docs):
     return "\n\n".join(doc.page_content for doc in docs)

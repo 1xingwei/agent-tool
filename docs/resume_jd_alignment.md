@@ -4,7 +4,7 @@
 
 ## 简历条目
 
-**2026.05 -- 至今　　　Agent 服务中台（agent-service-toolkit）　　　开发人员**
+### 2026.05 -- 至今　　　Agent 服务中台（agent-service-toolkit）　　　开发人员
 
 本项目基于 LangGraph、FastAPI、LangChain、Streamlit，自研了一套面向多智能体的 AI Agent 服务中台，提供统一的智能体接入、编排、对话与记忆能力，支持多轮对话的会话持久化、跨会话长期记忆、工具调用与人工介入。
 

@@ -90,7 +90,7 @@ asyncio.run(main())
 `model=fake`，`stream_tokens=false`；每档 200 个请求。单 worker 用 `run_service.py`，
 多 worker 用 `uvicorn service:app --app-dir src --workers 4`。
 
-**单 worker（SQLite 默认）**
+#### 单 worker（SQLite 默认）
 
 | 并发 | 完成率 | 首 token p50 | 首 token p95 | events/s | req/s |
 |---|---|---|---|---|---|
@@ -98,7 +98,7 @@ asyncio.run(main())
 | 200 | 200/200 | 1021.1ms | 1582.0ms | 161 | 80.6 |
 | 1000 | 200/200 | 1257.5ms | 1818.6ms | 149 | 74.7 |
 
-**4 workers（SQLite 共享文件）**
+#### 4 workers（SQLite 共享文件）
 
 | 并发 | 完成率 | 首 token p50 | 首 token p95 | events/s | req/s |
 |---|---|---|---|---|---|

@@ -196,3 +196,9 @@ smoke_live_app_failure.png
 
 # Claude Code agent worktrees (ephemeral, per-agent git checkouts)
 .claude/worktrees/
+
+# WorkBuddy agent workspace (local memory + config; never shared)
+.workbuddy/
+
+# Local pytest basetemp when running with --basetemp=.pytest_tmp_run
+.pytest_tmp_run/

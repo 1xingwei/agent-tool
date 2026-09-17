@@ -103,6 +103,10 @@ class Settings(BaseSettings):
 
     OPENWEATHERMAP_API_KEY: SecretStr | None = None
 
+    # Web search (ddgs) config
+    WEB_SEARCH_PROXY: str = ""
+    WEB_SEARCH_BACKENDS: str = "yahoo,duckduckgo"
+
     # MCP Configuration
     GITHUB_PAT: SecretStr | None = None
     MCP_GITHUB_SERVER_URL: str = "https://api.githubcopilot.com/mcp/"

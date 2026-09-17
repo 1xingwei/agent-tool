@@ -251,6 +251,23 @@ target that matches what you changed rather than the whole set. The optional add
 compose files live in `docker/` (e.g. `docker/compose.mongo.yaml`), layered on top of the
 default `compose.yaml` so the default stack stays lightweight.
 
+### Cleaning up pytest temp directories on Windows
+
+Git marks loose objects under `.git/objects` as read-only. On Windows that breaks pytest's
+own `tmp_path` cleanup: `shutil.rmtree` raises `PermissionError [WinError 5]` on them,
+pytest swallows the error, and leaves one `garbage-<uuid>` directory behind per session.
+The system temp folder therefore accumulates a few multi-megabyte leftovers over time.
+`scripts/clean_pytest_tmp.py` clears the read-only bit first, then deletes them:
+
+```sh
+uv run python scripts/clean_pytest_tmp.py --dry-run        # report only
+uv run python scripts/clean_pytest_tmp.py                  # clean the system temp dir
+uv run python scripts/clean_pytest_tmp.py .pytest_tmp_run  # also a local --basetemp
+```
+
+It only touches pytest scratch directories, never project data. Linux and macOS are
+unaffected, so CI never needs it — this is a local convenience, not part of the suite.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.

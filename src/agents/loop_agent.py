@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Literal
 
-from langchain_community.tools import DuckDuckGoSearchResults
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig, RunnableLambda, RunnableSerializable
@@ -9,7 +8,7 @@ from langgraph.graph import END, MessagesState, StateGraph
 from langgraph.managed import RemainingSteps
 from langgraph.prebuilt import ToolNode
 
-from agents.tools import calculator
+from agents.tools import calculator, web_search
 from core import get_model, settings
 
 
@@ -17,7 +16,6 @@ class AgentState(MessagesState, total=False):
     remaining_steps: RemainingSteps
 
 
-web_search = DuckDuckGoSearchResults(name="WebSearch")
 tools = [calculator, web_search]
 
 current_date = datetime.now().strftime("%B %d, %Y")
