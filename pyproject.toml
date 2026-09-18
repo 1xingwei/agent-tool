@@ -58,6 +58,7 @@ dependencies = [
     "langchain-mcp-adapters>=0.3.0",
     "ddgs>=9.14.4",
     "ag-ui-langgraph~=0.0.42",
+    "fastembed>=0.8.0",
 ]
 
 # 供应链冷却期：解析时仅考虑发布满 14 天的版本。需要

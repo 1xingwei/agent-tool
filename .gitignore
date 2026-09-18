@@ -41,6 +41,10 @@ lib64/
 parts/
 sdist/
 var/
+# P0-7 探针的旁路备份：注入缺陷前把源文件原文写到这里，
+# 正常结束后删除。若它残留，说明上次探针被中断、源码处于已注入状态，
+# 下一次探针启动会自动用它回滚（见 var/p07_inject.py）。
+*.p07bak
 wheels/
 share/python-wheels/
 *.egg-info/

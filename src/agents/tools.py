@@ -4,8 +4,8 @@ import re
 import numexpr
 from langchain_chroma import Chroma
 from langchain_core.tools import BaseTool, tool
-from langchain_openai import OpenAIEmbeddings
 
+from core.embeddings import get_embedding_model
 from core.settings import settings
 
 
@@ -78,38 +78,67 @@ web_search: BaseTool = tool(web_search_func)
 web_search.name = "WebSearch"
 
 
-# 格式化检索到的文档
-def format_contexts(docs):
-    return "\n\n".join(doc.page_content for doc in docs)
+# 格式化检索到的文档：保留 metadata，让模型能引用来源
+def format_contexts(docs) -> str:
+    """把检索到的文档格式化为带来源标注的上下文。
+
+    原先只取 `page_content`、把 `doc.metadata` 整个丢掉，导致
+    `rag_assistant` 的 instructions 要求模型「给出来源链接」，
+    但模型手里根本没有任何来源信息 —— 只能编或干脆不给。
+    这里把 source / page 提到每段之前，使引用可追溯。
+    """
+    if not docs:
+        return ""
+
+    parts = []
+    for i, doc in enumerate(docs, 1):
+        meta = doc.metadata or {}
+        source = meta.get("source") or meta.get("title") or "unknown"
+        page = meta.get("page")
+        # PyPDFLoader 的 page 从 0 开始计数，展示时转成人类习惯的 1-based
+        loc = f", 第 {page + 1} 页" if isinstance(page, int) else ""
+        parts.append(f"[来源 {i}: {source}{loc}]\n{doc.page_content}")
+    return "\n\n".join(parts)
+
+
+# retriever 与 embedding 客户端在进程内只构建一次。
+# 原实现每次工具调用都重建 OpenAIEmbeddings + Chroma + retriever，
+# 而 Chroma 的客户端构造会读持久化目录，属于明显的热路径浪费。
+_chroma_retriever = None
 
 
 def load_chroma_db():
-    # 为项目描述数据库创建嵌入函数
-    try:
-        embeddings = OpenAIEmbeddings()
-    except Exception as e:
-        raise RuntimeError(
-            "Failed to initialize OpenAIEmbeddings. Ensure the OpenAI API key is set."
-        ) from e
+    """返回进程内共享的 Chroma retriever（惰性单例）。
 
-    # 加载已存储的向量数据库
+    embedding 走 `core.embeddings`，与长期记忆 store 同源；
+    默认本地 fastembed，因此没有 OpenAI key 也能建库与检索。
+    """
+    global _chroma_retriever
+    if _chroma_retriever is not None:
+        return _chroma_retriever
+
+    embeddings = get_embedding_model()
+    if embeddings is None:
+        raise RuntimeError(
+            "无法初始化 embedding；请检查 EMBEDDING_PROVIDER / OPENAI_API_KEY 配置。"
+        )
+
     chroma_db = Chroma(persist_directory=settings.CHROMA_DIR, embedding_function=embeddings)
-    retriever = chroma_db.as_retriever(search_kwargs={"k": 5})
-    return retriever
+    _chroma_retriever = chroma_db.as_retriever(search_kwargs={"k": settings.RAG_TOP_K})
+    return _chroma_retriever
+
+
+def reset_chroma_retriever() -> None:
+    """清空缓存的 retriever，供测试与建库后刷新使用。"""
+    global _chroma_retriever
+    _chroma_retriever = None
 
 
 def database_search_func(query: str) -> str:
     """在 chroma_db 中搜索公司手册中的信息。"""
-    # 获取 chroma 检索器
     retriever = load_chroma_db()
-
-    # 在数据库中搜索相关文档
     documents = retriever.invoke(query)
-
-    # 将文档格式化为字符串
-    context_str = format_contexts(documents)
-
-    return context_str
+    return format_contexts(documents)
 
 
 database_search: BaseTool = tool(database_search_func)

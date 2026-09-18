@@ -31,6 +31,7 @@ from langsmith import uuid7
 
 from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info, load_agent
 from core import settings
+from core.distill import apply_distillation
 from memory import initialize_database, initialize_store
 from schema import (
     ChatHistory,
@@ -213,12 +214,57 @@ async def _handle_input(
     else:
         input = {"messages": [HumanMessage(content=user_input.message)]}
 
+    # 会话蒸馏的读取侧：只在「开新轮次」时改写视图。
+    # 恢复 interrupt 时不能改——Command 是控制指令，混进消息会被当成
+    # 图状态的一部分，行为未定义。
+    #
+    # 改写的是**送给模型的这一份**，checkpoint 里的原文一条都没动，
+    # 所以 /history 仍返回全量。语义与不变量见 core/distill.py。
+    if not interrupted_tasks:
+        input = _distill_input(input, state)
+
     kwargs = {
         "input": input,
         "config": config,
     }
 
     return kwargs, run_id
+
+
+def _distill_input(input: dict[str, Any], state: Any) -> dict[str, Any]:
+    """把历史消息折叠成「摘要 + 最近若干条」，拼在新输入之前。
+
+    三条边界，都是「原样返回」而非报错：
+
+    - 蒸馏被配置关掉；
+    - `aget_state` 没给出 `messages`（新 thread、或 functional-API agent
+      把历史放在 `__previous__` 里而这里读不到）；
+    - `apply_distillation` 判定不需要改写。
+
+    函数名以 `_` 开头且定义在此模块，是为了留在 `patch("service.service.get_agent")`
+    那套接缝之外——蒸馏不读 `get_agent`，没有理由让它影响 113 处既有 patch。
+    """
+    if not settings.DISTILL_ENABLED:
+        return input
+
+    values = getattr(state, "values", None) or {}
+    history = values.get("messages") or []
+    summary = values.get("distilled_summary") or ""
+    if not history:
+        return input
+
+    distilled = apply_distillation(list(history), summary)
+    if distilled is history or len(distilled) == len(history):
+        # 未发生改写：说明消息还不够多，保持原行为。
+        return input
+
+    current = input.get("messages") or []
+    input["messages"] = [*distilled, *current]
+    logger.info(
+        f"会话蒸馏生效：历史 {len(history)} 条折叠为 "
+        f"{len(distilled)} 条（含摘要），本轮输入 {len(current)} 条"
+    )
+    return input
 
 
 @router.post("/{agent_id}/invoke", operation_id="invoke_with_agent_id")
@@ -303,7 +349,7 @@ async def message_generator(
                     # 使用 langgraph-supervisor 库的特殊情况
                     if "supervisor" in node or "sub-agent" in node:
                         # 来自实际 agent 的唯一工具是 handoff 和 handback 工具
-                        if isinstance(update_messages[-1], ToolMessage):
+                        if update_messages and isinstance(update_messages[-1], ToolMessage):
                             if "sub-agent" in node and len(update_messages) > 1:
                                 # 若这是子 agent，我们希望保留最后 2 条消息——handback 工具及其结果
                                 update_messages = update_messages[-2:]

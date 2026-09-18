@@ -70,7 +70,7 @@ The Chinese docs live in `docs/`, flat and numbered `01`–`15` in reading order
 | 06 | [谷歌模型接入](docs/06-谷歌模型接入.md) | Setting up VertexAI |
 | 07 | [Ollama本地模型接入](docs/07-Ollama本地模型接入.md) | Running against a local model |
 | 08 | [面试加固设计](docs/08-面试加固设计.md) | Design spec: ingest pipeline, SQLite store, real search |
-| 09 | [代码库审查Agent设计](docs/09-代码库审查Agent设计.md) | Design spec for the code-review agent |
+| 09 | [代码库审查Agent设计](docs/09-代码库审查Agent设计.md) | The code-review agent as implemented: graph, read-only tools, memory contract, tests |
 | 10 | [审核与修复总账](docs/10-审核与修复总账.md) | Route matrix, audit findings, fix plan, landing + verification record |
 | 11 | [Agent能力完善方案](docs/11-Agent能力完善方案.md) | loop-agent fixes, the supervisor handoff fix, and its independent review |
 | 12 | [压测与Redis共享存储](docs/12-压测与Redis共享存储.md) | Load testing `/stream`; Redis shared checkpoint/store |

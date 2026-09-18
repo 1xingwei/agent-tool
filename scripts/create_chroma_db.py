@@ -7,11 +7,11 @@ from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, TextLoader
 from langchain_core.embeddings import Embeddings
-from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from core.embeddings import get_embedding_model
 from core.settings import settings
 
 # 从 .env 文件加载环境变量
@@ -28,7 +28,14 @@ def create_chroma_db(
 ):
     db_name = db_name or settings.CHROMA_DIR
     if embeddings is None:
-        embeddings = OpenAIEmbeddings(api_key=os.environ["OPENAI_API_KEY"])
+        # 与检索侧共用同一个 embedding 来源（core.embeddings）。
+        # 建库与检索必须用**同一个模型**，否则向量空间不一致、检索结果静默失真。
+        embeddings = get_embedding_model()
+        if embeddings is None:
+            raise RuntimeError(
+                "无法初始化 embedding。请检查 EMBEDDING_PROVIDER（默认 local，需 `uv add fastembed`）"
+                "或 OPENAI_API_KEY 配置。"
+            )
 
     # 初始化 Chroma 向量存储
     if delete_chroma_db and os.path.exists(db_name):

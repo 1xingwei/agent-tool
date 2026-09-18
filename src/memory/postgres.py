@@ -6,6 +6,7 @@ from langgraph.store.postgres import AsyncPostgresStore
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
+from core.embeddings import build_store_index
 from core.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -80,9 +81,19 @@ async def get_postgres_store():
 
     返回一个可与异步上下文管理器模式配合使用的 AsyncPostgresStore 实例。
 
+    `index` 决定语义检索是否开启（pgvector）。**不传时 LangGraph 静默关闭语义检索**
+    —— `search(query=...)` 仍返回结果，但按主键序且 `score is None`。
+    这里显式构造；embedding 不可用时退回纯 KV 并留下告警。
     """
     validate_postgres_config()
     application_name = settings.POSTGRES_APPLICATION_NAME + "-" + "store"
+
+    index = build_store_index()
+    if index is None:
+        logger.warning(
+            "Postgres store 未启用语义检索（embedding 不可用或 pgvector 未装）；"
+            "记忆仍可读写，但 store.asearch(query=...) 不会返回相似度排序。"
+        )
 
     async with AsyncConnectionPool(
         get_postgres_connection_string(),
@@ -95,7 +106,7 @@ async def get_postgres_store():
         check=AsyncConnectionPool.check_connection,
     ) as pool:
         try:
-            store = AsyncPostgresStore(pool)  # type: ignore[bad-argument-type]
+            store = AsyncPostgresStore(pool, index=index)  # type: ignore[bad-argument-type]
             await store.setup()
             yield store
         finally:

@@ -41,9 +41,11 @@ instructions = f"""
 
     A few things to remember:
     - If you have access to multiple databases, gather information from a diverse range of sources before crafting your response.
-    - Please include markdown-formatted links to any citations used in your response. Only include one
-    or two citations per response unless more are needed. ONLY USE LINKS RETURNED BY THE TOOLS.
+    - The tool output prefixes each snippet with a source marker like
+    `[来源 1: /path/to/file.pdf, 第 3 页]`. Cite these markers verbatim when you use a snippet,
+    so the user can trace every claim back to a source. Do not invent sources or page numbers.
     - Only use information from the database. Do not use information from outside sources.
+    - If the retrieved snippets do not contain the answer, say so plainly instead of guessing.
     """
 
 
