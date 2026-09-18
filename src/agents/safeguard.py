@@ -3,11 +3,13 @@ import logging
 import re
 from enum import Enum
 
-from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import Runnable
 from pydantic import BaseModel, Field
 
-from core import get_model, settings
-from schema.models import GroqModelName
+from core import get_model, get_supervisor_model, settings
+from schema.models import DeepseekModelName, GroqModelName
 
 logger = logging.getLogger(__name__)
 
@@ -92,13 +94,18 @@ def parse_safeguard_output(output: str) -> SafeguardOutput:
 
 class Safeguard:
     def __init__(self) -> None:
-        if settings.GROQ_API_KEY is None:
-            logger.debug("GROQ_API_KEY not set, skipping Safeguard")
-            self.model = None
-            return
-        self.model = get_model(GroqModelName.GPT_OSS_SAFEGUARD_20B).with_config(
-            tags=["skip_stream"]
-        )
+        self.model: Runnable[LanguageModelInput, AIMessage] | None = None
+        # 优先复用 DeepSeek key（本机已配）；有 Groq key 时才用专门的安全模型。
+        if settings.DEEPSEEK_API_KEY:
+            self.model = get_supervisor_model(DeepseekModelName.DEEPSEEK_V4_FLASH).with_config(
+                tags=["skip_stream"]
+            )
+        elif settings.GROQ_API_KEY:
+            self.model = get_model(GroqModelName.GPT_OSS_SAFEGUARD_20B).with_config(
+                tags=["skip_stream"]
+            )
+        else:
+            logger.debug("no DEEPSEEK_API_KEY / GROQ_API_KEY, skipping Safeguard")
         self.system_prompt = SystemMessage(content=safeguard_instructions)
 
     def _compile_messages(self, messages: list[AnyMessage]) -> list[AnyMessage]:
