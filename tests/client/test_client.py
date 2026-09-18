@@ -104,9 +104,7 @@ def test_sync_bridge_propagates_error(agent_client):
 
     asyncio.run 分支：_run_sync 把 coro 的异常原样复抛给调用方。
     """
-    with patch.object(
-        agent_client, "ainvoke", new=AsyncMock(side_effect=AgentClientError("boom"))
-    ):
+    with patch.object(agent_client, "ainvoke", new=AsyncMock(side_effect=AgentClientError("boom"))):
         with pytest.raises(AgentClientError) as exc:
             agent_client.invoke("q")
     assert str(exc.value) == "boom"
@@ -145,6 +143,21 @@ async def test_sync_error_inside_running_loop(agent_client):
         with pytest.raises(AgentClientError) as exc:
             agent_client.get_user_threads("u")
     assert str(exc.value) == "boom"
+
+
+@pytest.mark.asyncio
+async def test_sync_stream_inside_running_loop(agent_client):
+    """守卫同步流桥在运行中 loop 内可用（docs/18 N2）。
+
+    反例：去掉 _iterate_sync 的工作线程分支，本用例必须变红
+    （run_until_complete 在运行中的 loop 内必抛 RuntimeError）。
+    """
+
+    async def fake_astream(*args, **kwargs):
+        yield "tok"
+
+    with patch.object(agent_client, "astream", new=fake_astream):
+        assert list(agent_client.stream("q")) == ["tok"]
 
 
 @pytest.mark.asyncio

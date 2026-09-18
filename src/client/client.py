@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import queue
 from collections.abc import AsyncGenerator, Coroutine, Generator
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -40,9 +41,41 @@ def _iterate_sync[T](agen: AsyncGenerator[T, None]) -> Generator[T, None, None]:
     """同步迭代异步生成器。
 
     必须在同一个 loop 上逐个 `__anext__`：每次新建 loop 会让已绑定的 httpx
-    连接池落到已关闭的 loop 上。`finally` 里 `aclose` 是为了调用方提前 break 时
-    也能关闭响应流。
+    连接池落到已关闭的 loop 上。
     """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        yield from _drive_iter(agen)
+        return
+    # 已有运行中的 loop（如 streamlit 的 async main）：整个迭代退到工作线程，
+    # 否则 `loop.run_until_complete` 会抛「Cannot run the event loop while
+    # another loop is running」。跨线程用 queue 桥接逐项转发。
+    out: queue.Queue = queue.Queue()
+    sentinel = object()
+
+    def _worker() -> None:
+        try:
+            for item in _drive_iter(agen):
+                out.put(item)
+        except BaseException as e:
+            out.put(e)
+        finally:
+            out.put(sentinel)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pool.submit(_worker)
+        while True:
+            item = out.get()
+            if item is sentinel:
+                return
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+
+
+def _drive_iter[T](agen: AsyncGenerator[T, None]) -> Generator[T, None, None]:
+    """在专用 loop 上逐个驱动 `__anext__`；`finally` 里 `aclose` 是为了调用方提前 break 时也能关闭响应流。"""
     loop = asyncio.new_event_loop()
     try:
         while True:

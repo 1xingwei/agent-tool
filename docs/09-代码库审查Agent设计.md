@@ -177,7 +177,7 @@ docstring，**不译提示词**。召回到历史结论时，会在 system 后�
 | 5 | namespace 三元组（含 `repo_name`） | 二元组 `("code-reviewer", user_id)` | 未按仓库再分层；同一天跨仓库会互相覆盖 |
 | 6 | 读路径 `store.aget`，命中则免跑 git | `store.asearch` 语义召回，只注入提示词 | 不做「命中即跳过工具」的短路 |
 | 7 | `aput` 前先查重 | 无查重，同日 key 直接覆盖 | 未做 |
-| 8 | 测试三项（编译/工具/store） | 三个文件共 47 条用例 | 含非 ASCII 解码、记忆读路径、蒸馏四组 |
+| 8 | 测试三项（编译/工具/store） | 三个文件共 44 条用例 | 含非 ASCII 解码、记忆读路径、蒸馏四组 |
 | 9 | 文件清单 4 项 | 另含 `agents/code/tools.py`、`tests/agents/test_memory_read_path.py`，并依赖 `core/distill.py` | — |
 
 ## 10. 文件清单（现状）

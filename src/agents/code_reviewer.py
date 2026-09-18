@@ -110,7 +110,7 @@ async def recall_reviews(
 async def remember_review(
     state: AgentState, config: RunnableConfig, store: BaseStore | None
 ) -> AgentState:
-    """将最终审查结论持久化到 store，按仓库为键。"""
+    """将最终审查结论持久化到 store，按用户 + 日期为键（无仓库维度，见 docs/09 §9）。"""
     last_message = state["messages"][-1]
     if not isinstance(last_message, AIMessage):
         return {"messages": []}
