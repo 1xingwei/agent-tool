@@ -6,7 +6,7 @@
 >
 > | 部分 | 内容 | 状态 |
 > |---|---|---|
-> | §1 | loop-agent 三项改动（共享止损常量、`fetch_url`、搜索预算） | **未落地** |
+> | §1 | loop-agent 三项改动（共享止损常量、`fetch_url`、搜索预算） | **已落地**（2026-09-18 晚，见 §1.7） |
 > | §2 | multi-agent 转交 500 | **已落地**（走路线 A，见 §2.5） |
 > | §5 | 一轮独立复核的结论与逐条处置 | 已折入本文 |
 
@@ -172,6 +172,33 @@ P3 说明「只靠 prompt 约束」本质上是建议而非保证。代码侧兜
 
 `probe_both.py` 的 L2 用例：工具调用数 ≤4、耗时 ≤20s、答出 `1.2.11`。
 连续跑 3 次取一致性，不只看单次 —— 搜索本身有抖动。
+
+#### 1.8 落地记录（2026-09-18 晚）
+
+| 改动 | 落地内容 |
+|---|---|
+| §1.2 共享止损常量 | 新增 `src/agents/instructions.py` 的 `SEARCH_STOP_CONDITION`；`loop_agent` 与 `research_assistant` 各自 import（消除两处副本） |
+| §1.3 `fetch_url` | `src/agents/tools.py` 新增 `fetch_url` 工具：httpx、连接 5s/读取 15s、`settings.WEB_SEARCH_PROXY`、手工逐跳重定向（≤3 跳，**每跳重新校验**）、正则剥标签、失败返回字符串。SSRF 防护：协议白名单 + 私网 IP 检测 + 明文主机名拒绝 + `Content-Length` 预检 + 硬上限 `FETCH_URL_HARD_CAP=100000` |
+| §1.4 搜索预算 | `loop_agent.AgentState` 加 `search_calls`；`acall_model` 统计历史 `WebSearch` 调用，超过 `SEARCH_BUDGET=4` 后 `wrap_model` 从 `bind_tools` 摘掉 `WebSearch` 并注入 system 消息 |
+| §1.5 工具集对齐 | `loop_agent` 与 `research_assistant` 的 tools 均为 `[WebSearch, Calculator, fetch_url]`；两处 instructions 均含止损条款与「先搜后抓」工具顺序 |
+
+**实现中发现并修复的一个 SSRF 缺陷**：初版 `_validate_url_safe` 对 hostname 无条件走
+`socket.getaddrinfo`，而 IP 字面量 URL（如 `http://169.254.169.254/`）的 DNS 结果
+可被环境/mock 影响，导致私网 IP 字面量被当成公网放行。修法：hostname 本身是合法 IP
+字面量时**直接校验该 IP**，只对域名解析 A/AAAA 记录。测试 `test_fetch_url_blocks_redirect_to_internal`
+正是靠这条把 `getaddrinfo` mock 成公网 IP，从而暴露该绕过。
+
+验证：
+
+| 项 | 结果 |
+|---|---|
+| `pytest -q` | **299 passed / 7 skipped**（新增 13 条：`test_tools_fetch_url.py` 11 + `test_loop_agent.py` 扩展） |
+| `ruff check` / `ruff format --check` | All checks passed / 65 files already formatted |
+| `pyrefly check` | **0 errors** |
+
+> **未做 §1.7 的 `probe_both.py` L2 实测**（工具调用数/耗时/答对 `1.2.11`）：
+> 该验收需要真实联网搜索，收益是「实测稳定性」而非「功能是否存在」。
+> 代码路径已由离线测试覆盖；真实搜索的收敛性待下次联网运行时补测。
 
 ## 2 multi-agent（已落地：路线 A）
 

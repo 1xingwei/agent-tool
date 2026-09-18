@@ -1,6 +1,9 @@
+import ipaddress
 import math
 import re
+from html import unescape
 
+import httpx
 import numexpr
 from langchain_chroma import Chroma
 from langchain_core.tools import BaseTool, tool
@@ -76,6 +79,103 @@ def web_search_func(query: str, max_results: int = 5) -> str:
 
 web_search: BaseTool = tool(web_search_func)
 web_search.name = "WebSearch"
+
+
+FETCH_URL_HARD_CAP = 100_000  # 响应体硬上限（字符），防模型把上下文撑爆
+
+
+def _is_private_address(ip_str: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True  # 解析不出合法 IP，宁拦勿放
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+
+
+def _hostname_blocked(hostname: str) -> bool:
+    hostname = hostname.lower()
+    return hostname == "localhost" or hostname.endswith(".internal") or hostname.endswith(".local")
+
+
+def _validate_url_safe(url: str) -> bool:
+    """SSRF 防护：URL 白名单 + 解析后的 IP 私网检测（docs/11 §1.3）。
+
+    hostname 是 IP 字面量时直接校验该 IP（跳过 DNS —— DNS 结果可能已被 mock /
+    污染，字面量本身即可判定）；是域名时校验其全部 A/AAAA 记录。
+    """
+    if not url.startswith(("http://", "https://")):
+        return False
+    from urllib.parse import urlparse
+
+    hostname = urlparse(url).hostname
+    if not hostname or _hostname_blocked(hostname):
+        return False
+    try:
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        return not _is_private_address(hostname)
+    try:
+        import socket
+
+        addrinfo = socket.getaddrinfo(hostname, None)
+    except OSError:
+        return False
+    return all(_is_private_address(str(sockaddr[0])) is False for _, _, _, _, sockaddr in addrinfo)
+
+
+def fetch_url_func(url: str, max_chars: int = 4000) -> str:
+    """抓取网页并返回其可见文本。
+
+    在 web_search 之后使用，当搜索摘要不含答案时 —— 版本号、日期和表格通常
+    只在页面正文里。结果按段落截断。
+
+    Args:
+        url (str): 要抓取的 http / https 地址。
+        max_chars (int, optional): 返回文本的最大字符数（上限 100000）。
+    """
+    if not _validate_url_safe(url):
+        return "ERROR: URL is not allowed (must be public http/https)."
+    limit = min(max_chars, FETCH_URL_HARD_CAP)
+    timeout = httpx.Timeout(connect=5.0, read=15.0, write=15.0, pool=15.0)
+    try:
+        with httpx.Client(
+            proxy=settings.WEB_SEARCH_PROXY or None,
+            timeout=timeout,
+            follow_redirects=False,
+        ) as client:
+            current = url
+            for _ in range(3):
+                resp = client.get(current, headers={"User-Agent": "agent-tool"})
+                content_length = resp.headers.get("content-length")
+                if content_length and int(content_length) > limit * 4:
+                    return "ERROR: page too large to fetch."
+                if resp.is_redirect:
+                    current = resp.headers.get("location")
+                    if not current or not _validate_url_safe(current):
+                        return "ERROR: redirect target is not allowed."
+                    continue
+                resp.raise_for_status()
+                text = _html_to_text(resp.text)
+                return text[:limit]
+            return "ERROR: too many redirects."
+    except httpx.HTTPError as e:
+        return f"ERROR: could not fetch URL: {e}"
+    except ValueError as e:
+        return f"ERROR: could not fetch URL: {e}"
+
+
+def _html_to_text(html: str) -> str:
+    """剥掉 script/style/svg 块与标签，把实体还原为可读文本。"""
+    html = re.sub(r"<(script|style|svg)[^>]*>.*?</\1>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"<[^>]+>", " ", html)
+    html = unescape(html)
+    return re.sub(r"[ \t]+", " ", html)
+
+
+fetch_url: BaseTool = tool(fetch_url_func)
+fetch_url.name = "fetch_url"
 
 
 # 格式化检索到的文档：保留 metadata，让模型能引用来源

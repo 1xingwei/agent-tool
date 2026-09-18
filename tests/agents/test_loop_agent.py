@@ -24,6 +24,43 @@ def test_loop_agent_has_react_tools() -> None:
     names = [t.name for t in tools]
     assert "WebSearch" in names
     assert "Calculator" in names
+    assert "fetch_url" in names
+
+
+def test_loop_agent_instructions_include_stop_condition() -> None:
+    """P1 守卫：止损条款必须已进 instructions（防止再次漏改）。"""
+    from agents.loop_agent import instructions
+
+    assert "stop early" in instructions
+
+
+def test_search_budget_removes_websearch_when_exhausted() -> None:
+    """P3 守卫：WebSearch 次数超过阈值后，bind_tools 里不再有 WebSearch。"""
+    from agents.loop_agent import SEARCH_BUDGET, _search_calls_in, wrap_model
+    from core.llm import FakeToolModel
+
+    history = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                ToolCall(name="WebSearch", args={"query": "x"}, id=f"w{i}")
+                for i in range(SEARCH_BUDGET)
+            ],
+        )
+    ]
+    assert _search_calls_in(history) >= SEARCH_BUDGET, "前置失败：计数应达到预算上限"
+
+    captured: dict = {}
+
+    class SpyModel(FakeToolModel):
+        def bind_tools(self, tools, **kwargs):
+            captured["names"] = [t.name for t in tools]
+            return self
+
+    wrap_model(SpyModel(responses=["ok"]), search_budget_exhausted=True)  # type: ignore[arg-type]
+    assert "WebSearch" not in captured["names"], "P3 回归：预算耗尽后 WebSearch 仍在绑定里"
+    assert "Calculator" in captured["names"]
+    assert "fetch_url" in captured["names"]
 
 
 @pytest.mark.asyncio

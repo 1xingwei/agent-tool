@@ -4,10 +4,11 @@ from langchain_community.tools import OpenWeatherMapQueryRun
 from langchain_community.utilities import OpenWeatherMapAPIWrapper
 
 from agents.graph_factory import build_tool_agent_graph
-from agents.tools import calculator, web_search
+from agents.instructions import SEARCH_STOP_CONDITION
+from agents.tools import calculator, fetch_url, web_search
 from core import settings
 
-tools = [web_search, calculator]
+tools = [web_search, calculator, fetch_url]
 
 # 如果设置了 API key，则添加天气工具
 # 在 https://openweathermap.org/api/ 注册获取 API key
@@ -29,10 +30,9 @@ instructions = f"""
     or two citations per response unless more are needed. ONLY USE LINKS RETURNED BY THE TOOLS.
     - Use calculator tool with numexpr to answer math questions. The user does not understand numexpr,
       so for the final response, use human readable format - e.g. "300 * 200", not "(300 \\times 200)".
-    - Search efficiently and stop early. Two or three web searches on the same question are enough:
-      if the results so far do not contain the answer, tell the user plainly what you could not find
-      instead of rewording the query and searching again. Never repeat a search that returned no new
-      information, and do not keep searching just to fill a gap you already know the results miss.
+    {SEARCH_STOP_CONDITION}
+    - Tool order: first use WebSearch to find candidate pages; when a snippet is too short to contain
+      the answer, open the page body with fetch_url; stop once you have it.
     """
 
 
