@@ -1,6 +1,8 @@
+import asyncio
 import json
 import os
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Coroutine, Generator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import httpx
@@ -16,6 +18,41 @@ from schema import (
     UserThreads,
     UserThreadsInput,
 )
+
+
+def _run_sync[T](coro: Coroutine[Any, Any, T]) -> T:
+    """在同步方法里跑一个一次性协程。
+
+    streamlit_app.py 里调用本类的同步方法时位于异步 `main()` 内。streamlit 的
+    `@st.cache_data` 在当前线程直接执行被缓存函数（cache_utils.py:385），没有线程池
+    卸载，因此此时裸用 `asyncio.run` 会抛「cannot be called from a running event
+    loop」；检测到运行中的 loop 就退到工作线程。
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+def _iterate_sync[T](agen: AsyncGenerator[T, None]) -> Generator[T, None, None]:
+    """同步迭代异步生成器。
+
+    必须在同一个 loop 上逐个 `__anext__`：每次新建 loop 会让已绑定的 httpx
+    连接池落到已关闭的 loop 上。`finally` 里 `aclose` 是为了调用方提前 break 时
+    也能关闭响应流。
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        while True:
+            try:
+                yield loop.run_until_complete(agen.__anext__())
+            except StopAsyncIteration:
+                return
+    finally:
+        loop.run_until_complete(agen.aclose())
+        loop.close()
 
 
 class AgentClientError(Exception):
@@ -139,42 +176,16 @@ class AgentClient:
         user_id: str | None = None,
         agent_config: dict[str, Any] | None = None,
     ) -> ChatMessage:
-        """
-        同步调用 agent。仅返回最终消息。
-
-        Args:
-            message (str): 要发送给 agent 的消息
-            model (str, optional): 用于 agent 的 LLM 模型
-            thread_id (str, optional): 用于继续对话的 thread ID
-            user_id (str, optional): 用于跨多个 thread 继续对话的 user ID
-            agent_config (dict[str, Any], optional): 传递给 agent 的额外配置
-
-        Returns:
-            ChatMessage: agent 的响应
-        """
-        if not self.agent:
-            raise AgentClientError("No agent selected. Use update_agent() to select an agent.")
-        request = UserInput(message=message)
-        if thread_id:
-            request.thread_id = thread_id
-        if model:
-            request.model = model  # type: ignore[assignment]
-        if agent_config:
-            request.agent_config = agent_config
-        if user_id:
-            request.user_id = user_id
-        try:
-            response = httpx.post(
-                f"{self.base_url}/{self.agent}/invoke",
-                json=request.model_dump(),
-                headers=self._headers,
-                timeout=self.timeout,
+        """同步调用 agent。仅返回最终消息。"""
+        return _run_sync(
+            self.ainvoke(
+                message,
+                model=model,
+                thread_id=thread_id,
+                user_id=user_id,
+                agent_config=agent_config,
             )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise AgentClientError(f"Error: {e}")
-
-        return ChatMessage.model_validate(response.json())
+        )
 
     def _parse_stream_line(self, line: str) -> ChatMessage | str | None:
         line = line.strip()
@@ -210,53 +221,17 @@ class AgentClient:
         agent_config: dict[str, Any] | None = None,
         stream_tokens: bool = True,
     ) -> Generator[ChatMessage | str, None, None]:
-        """
-        同步流式输出 agent 的响应。
-
-        agent 过程的每条中间消息都会以 ChatMessage 形式产出。
-        如果 stream_tokens 为 True（默认值），响应还会产出
-        流式模型生成的内容 token。
-
-        Args:
-            message (str): 要发送给 agent 的消息
-            model (str, optional): 用于 agent 的 LLM 模型
-            thread_id (str, optional): 用于继续对话的 thread ID
-            user_id (str, optional): 用于跨多个 thread 继续对话的 user ID
-            agent_config (dict[str, Any], optional): 传递给 agent 的额外配置
-            stream_tokens (bool, optional): 在生成时流式输出 token
-                默认：True
-
-        Returns:
-            Generator[ChatMessage | str, None, None]: agent 的响应
-        """
-        if not self.agent:
-            raise AgentClientError("No agent selected. Use update_agent() to select an agent.")
-        request = StreamInput(message=message, stream_tokens=stream_tokens)
-        if thread_id:
-            request.thread_id = thread_id
-        if user_id:
-            request.user_id = user_id
-        if model:
-            request.model = model  # type: ignore[assignment]
-        if agent_config:
-            request.agent_config = agent_config
-        try:
-            with httpx.stream(
-                "POST",
-                f"{self.base_url}/{self.agent}/stream",
-                json=request.model_dump(),
-                headers=self._headers,
-                timeout=self.timeout,
-            ) as response:
-                response.raise_for_status()
-                for line in response.iter_lines():
-                    if line.strip():
-                        parsed = self._parse_stream_line(line)
-                        if parsed is None:
-                            break
-                        yield parsed
-        except httpx.HTTPError as e:
-            raise AgentClientError(f"Error: {e}")
+        """同步流式输出 agent 的响应。"""
+        return _iterate_sync(
+            self.astream(
+                message,
+                model=model,
+                thread_id=thread_id,
+                user_id=user_id,
+                agent_config=agent_config,
+                stream_tokens=stream_tokens,
+            )
+        )
 
     async def astream(
         self,
@@ -307,14 +282,18 @@ class AgentClient:
                     timeout=self.timeout,
                 ) as response:
                     response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if line.strip():
-                            parsed = self._parse_stream_line(line)
-                            if parsed is None:
-                                break
-                            # 不要产出空字符串 token，它们会导致生成器出现问题
-                            if parsed != "":
-                                yield parsed
+                    lines = response.aiter_lines()
+                    try:
+                        async for line in lines:
+                            if line.strip():
+                                parsed = self._parse_stream_line(line)
+                                if parsed is None:
+                                    break
+                                # 不要产出空字符串 token，它们会导致生成器出现问题
+                                if parsed != "":
+                                    yield parsed
+                    finally:
+                        await lines.aclose()  # type: ignore[missing-attribute]
             except httpx.HTTPError as e:
                 raise AgentClientError(f"Error: {e}")
 
@@ -376,27 +355,8 @@ class AgentClient:
     def get_user_threads(
         self, user_id: str, agent: str | None = None, limit: int = 20
     ) -> UserThreads:
-        """
-        列出用户的对话 thread。
-
-        Args:
-            user_id (str): 要列出 thread 的 user ID。
-            agent (str, optional): 要列出其 thread 的 agent。
-            limit (int, optional): 返回的 thread 最大数量。
-        """
-        url, params = self._user_threads_request(user_id, agent, limit)
-        try:
-            response = httpx.get(
-                url,
-                params=params,
-                headers=self._headers,
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            raise AgentClientError(f"Error: {e}")
-
-        return UserThreads.model_validate(response.json())
+        """列出用户的对话 thread。"""
+        return _run_sync(self.aget_user_threads(user_id, agent=agent, limit=limit))
 
     async def aget_user_threads(
         self, user_id: str, agent: str | None = None, limit: int = 20

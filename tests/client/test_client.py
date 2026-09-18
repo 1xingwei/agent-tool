@@ -43,43 +43,10 @@ def test_headers(mock_env):
 
 
 def test_invoke(agent_client):
-    """测试同步调用。"""
-    QUESTION = "What is the weather?"
-    ANSWER = "The weather is sunny."
-
-    # 模拟成功响应
-    mock_request = Request("POST", "http://test/invoke")
-    mock_response = Response(
-        200,
-        json={"type": "ai", "content": ANSWER},
-        request=mock_request,
-    )
-    with patch("httpx.post", return_value=mock_response):
-        response = agent_client.invoke(QUESTION)
-        assert isinstance(response, ChatMessage)
-        assert response.type == "ai"
-        assert response.content == ANSWER
-
-    # 测试带 model 和 thread_id
-    with patch("httpx.post", return_value=mock_response) as mock_post:
-        response = agent_client.invoke(
-            QUESTION,
-            model="gpt-5-nano",
-            thread_id="test-thread",
-        )
-        assert isinstance(response, ChatMessage)
-        # 验证请求
-        args, kwargs = mock_post.call_args
-        assert kwargs["json"]["message"] == QUESTION
-        assert kwargs["json"]["model"] == "gpt-5-nano"
-        assert kwargs["json"]["thread_id"] == "test-thread"
-
-    # 测试错误响应
-    error_response = Response(500, text="Internal Server Error", request=mock_request)
-    with patch("httpx.post", return_value=error_response):
-        with pytest.raises(AgentClientError) as exc:
-            agent_client.invoke(QUESTION)
-        assert "500 Internal Server Error" in str(exc.value)
+    """并轨后同步方法只是薄委托：断言转发，不重复测 HTTP。"""
+    with patch.object(agent_client, "ainvoke", new=AsyncMock(return_value="R")) as m:
+        assert agent_client.invoke("q", model="m", thread_id="t", user_id="u") == "R"
+    m.assert_awaited_once_with("q", model="m", thread_id="t", user_id="u", agent_config=None)
 
 
 @pytest.mark.asyncio
@@ -122,54 +89,25 @@ async def test_ainvoke(agent_client):
 
 
 def test_stream(agent_client):
-    """测试同步流式。"""
-    QUESTION = "What is the weather?"
-    TOKENS = ["The", " weather", " is", " sunny", "."]
-    FINAL_ANSWER = "The weather is sunny."
+    """并轨后同步流只是薄委托：断言逐项转发到 astream。"""
 
-    # 创建带流式事件的模拟响应
-    events = (
-        [f"data: {json.dumps({'type': 'token', 'content': token})}" for token in TOKENS]
-        + [
-            f"data: {json.dumps({'type': 'message', 'content': {'type': 'ai', 'content': FINAL_ANSWER}})}"
-        ]
-        + ["data: [DONE]"]
-    )
+    async def fake_astream(*args, **kwargs):
+        yield "tok1"
+        yield "tok2"
 
-    # 模拟流式响应
-    mock_response = Mock()
-    mock_response.status_code = 200
-    mock_response.iter_lines.return_value = events
-    mock_response.request = Request("POST", "http://test/stream")
-    mock_response.__enter__ = Mock(return_value=mock_response)
-    mock_response.__exit__ = Mock(return_value=None)
+    with patch.object(agent_client, "astream", new=fake_astream):
+        assert list(agent_client.stream("q")) == ["tok1", "tok2"]
 
-    with patch("httpx.stream", return_value=mock_response):
-        # 收集所有流式响应
-        responses = list(agent_client.stream(QUESTION))
 
-        # 验证 token 已被流式输出
-        assert len(responses) == len(TOKENS) + 1  # token + 最终消息
-        for i, token in enumerate(TOKENS):
-            assert responses[i] == token
+@pytest.mark.asyncio
+async def test_sync_call_inside_running_loop(agent_client):
+    """守卫 streamlit_app.py 的嵌套场景。
 
-        # 验证最终消息
-        final_message = responses[-1]
-        assert isinstance(final_message, ChatMessage)
-        assert final_message.type == "ai"
-        assert final_message.content == FINAL_ANSWER
-
-    # 测试错误响应
-    error_response = Response(
-        500, text="Internal Server Error", request=Request("POST", "http://test/stream")
-    )
-    error_response_mock = Mock()
-    error_response_mock.__enter__ = Mock(return_value=error_response)
-    error_response_mock.__exit__ = Mock(return_value=None)
-    with patch("httpx.stream", return_value=error_response_mock):
-        with pytest.raises(AgentClientError) as exc:
-            list(agent_client.stream(QUESTION))
-        assert "500 Internal Server Error" in str(exc.value)
+    反例：把 _run_sync 的 ThreadPoolExecutor 分支去掉，本用例必须变红
+    （asyncio.run 在运行中的 loop 内必抛 RuntimeError）。
+    """
+    with patch.object(agent_client, "aget_user_threads", new=AsyncMock(return_value="T")):
+        assert agent_client.get_user_threads("u") == "T"
 
 
 @pytest.mark.asyncio
@@ -344,74 +282,10 @@ def test_info(agent_client):
 
 
 def test_get_user_threads(agent_client):
-    """测试各种配置下的用户 thread 检索。"""
-    USER_ID = "user-123"
-
-    MOCK_THREADS_RESPONSE = {
-        "threads": [
-            {
-                "thread_id": "thread-1",
-                "user_id": USER_ID,
-                "agent_id": "test-agent",
-                "created_at": datetime.now(UTC).isoformat(),
-                "updated_at": datetime.now(UTC).isoformat(),
-                "metadata": {"title": "First Chat"},
-            },
-            {
-                "thread_id": "thread-2",
-                "user_id": USER_ID,
-                "agent_id": "test-agent",
-                "created_at": datetime.now(UTC).isoformat(),
-                "updated_at": datetime.now(UTC).isoformat(),
-                "metadata": {"title": "Second Chat"},
-            },
-        ]
-    }
-
-    mock_request = Request("GET", "http://test/test-agent/threads")
-    mock_response = Response(200, json=MOCK_THREADS_RESPONSE, request=mock_request)
-
-    with patch("httpx.get", return_value=mock_response) as mock_get:
-        result = agent_client.get_user_threads(USER_ID)
-
-        assert isinstance(result, UserThreads)
-        assert len(result.threads) == 2
-        assert result.threads[0].thread_id == "thread-1"
-
-        mock_get.assert_called_once()
-        args, kwargs = mock_get.call_args
-        assert args[0] == "http://test/test-agent/threads"
-        assert kwargs["params"] == {
-            "user_id": USER_ID,
-            "limit": 20,
-        }
-
-    with patch("httpx.get", return_value=mock_response) as mock_get:
-        agent_client.get_user_threads(USER_ID, agent="custom-agent", limit=50)
-
-        args, kwargs = mock_get.call_args
-        assert args[0] == "http://test/custom-agent/threads"
-        assert kwargs["params"] == {
-            "user_id": USER_ID,
-            "limit": 50,
-        }
-
-    agent_client.agent = None
-    with patch("httpx.get", return_value=mock_response) as mock_get:
-        agent_client.get_user_threads(USER_ID)
-
-        args, kwargs = mock_get.call_args
-        assert args[0] == "http://test/threads"
-        assert kwargs["params"] == {"user_id": USER_ID, "limit": 20}
-
-    agent_client.agent = "test-agent"
-
-    error_response = Response(500, text="Internal Server Error", request=mock_request)
-    with patch("httpx.get", return_value=error_response):
-        with pytest.raises(AgentClientError) as exc:
-            agent_client.get_user_threads(USER_ID)
-        assert "Error:" in str(exc.value)
-        assert "500 Internal Server Error" in str(exc.value)
+    """并轨后同步方法只是薄委托：断言转发到 aget_user_threads。"""
+    with patch.object(agent_client, "aget_user_threads", new=AsyncMock(return_value="T")) as m:
+        assert agent_client.get_user_threads("u", agent="custom-agent", limit=50) == "T"
+    m.assert_awaited_once_with("u", agent="custom-agent", limit=50)
 
 
 @pytest.mark.asyncio

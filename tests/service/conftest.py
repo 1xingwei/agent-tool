@@ -1,7 +1,10 @@
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
+from httpx import ASGITransport
 from langchain_core.messages import AIMessage
 from langgraph.types import StateSnapshot
 
@@ -61,7 +64,12 @@ def mock_settings(mock_env):
 
 @pytest.fixture
 def mock_httpx():
-    """将 httpx.stream 和 httpx.get 打补丁以使用我们的测试客户端。"""
+    """将 httpx.stream 和 httpx.get 打补丁以使用我们的测试客户端。
+
+    sync `stream`（`AgentClient`）并轨后委托给 `astream`，走 `httpx.AsyncClient`，
+    所以这里也必须把 AsyncClient 指向同一个 app（ASGI 传输层）——
+    否则 `client.stream(...)` 会变成对 `http://0.0.0.0` 的真实请求。
+    """
 
     with TestClient(app) as client:
 
@@ -75,6 +83,17 @@ def mock_httpx():
             path = url.replace("http://0.0.0.0", "")
             return client.get(path, **kwargs)
 
+        @asynccontextmanager
+        async def mock_astream(self, method: str, url: str, **kwargs):
+            # ASGITransport 直接把完整 URL 交给 app；请求体一次装载完整，
+            # 避免半途 break 时残留未关闭的流式生成器。
+            kwargs.pop("timeout", None)
+            request = httpx.Request(method, url, **kwargs)
+            response = await ASGITransport(app=app).handle_async_request(request)
+            response.request = request
+            yield response
+
         with patch("httpx.stream", mock_stream):
             with patch("httpx.get", mock_get):
-                yield
+                with patch("httpx.AsyncClient.stream", mock_astream):
+                    yield
