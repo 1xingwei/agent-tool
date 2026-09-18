@@ -12,7 +12,7 @@ from client import AgentClient
 from schema.schema import ChatMessage
 from service.utils import langchain_to_chat_message
 
-START_MESSAGE = CustomData(type="start", data={"key1": "value1", "key2": 123})
+START_MESSAGE = CustomData(data={"key1": "value1", "key2": 123})
 
 STATIC_MESSAGES = [
     AIMessage(
@@ -27,7 +27,7 @@ STATIC_MESSAGES = [
     ),
     ToolMessage(content="42", tool_call_id="test_call_id"),
     AIMessage(content="The answer is 42"),
-    CustomData(type="end", data={"time": "end"}).to_langchain(),
+    CustomData(data={"time": "end"}).to_langchain(),
 ]
 
 

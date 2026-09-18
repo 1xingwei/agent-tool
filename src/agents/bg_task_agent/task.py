@@ -21,10 +21,7 @@ class Task:
         task_data = TaskData(name=self.name, run_id=self.id, state=self.state, data=data)
         if self.result:
             task_data.result = self.result
-        task_custom_data = CustomData(
-            type=self.name,
-            data=task_data.model_dump(),
-        )
+        task_custom_data = CustomData(data=task_data.model_dump())
         if writer:
             task_custom_data.dispatch(writer)
         return task_custom_data.to_langchain()
