@@ -1,22 +1,10 @@
 from datetime import datetime
 
-from langchain_community.tools import OpenWeatherMapQueryRun
-from langchain_community.utilities import OpenWeatherMapAPIWrapper
-
 from agents.graph_factory import build_tool_agent_graph
 from agents.instructions import SEARCH_STOP_CONDITION
-from agents.tools import calculator, fetch_url, web_search
-from core import settings
+from agents.tools import calculator, fetch_url, weather, web_search
 
-tools = [web_search, calculator, fetch_url]
-
-# 如果设置了 API key，则添加天气工具
-# 在 https://openweathermap.org/api/ 注册获取 API key
-if settings.OPENWEATHERMAP_API_KEY:
-    wrapper = OpenWeatherMapAPIWrapper(
-        openweathermap_api_key=settings.OPENWEATHERMAP_API_KEY.get_secret_value()
-    )
-    tools.append(OpenWeatherMapQueryRun(name="Weather", api_wrapper=wrapper))
+tools = [web_search, calculator, fetch_url, weather]
 
 current_date = datetime.now().strftime("%B %d, %Y")
 instructions = f"""

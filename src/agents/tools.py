@@ -178,6 +178,47 @@ fetch_url: BaseTool = tool(fetch_url_func)
 fetch_url.name = "fetch_url"
 
 
+def weather_func(city: str) -> str:
+    """查询城市当前天气。
+
+    用 wttr.in（免 API key）取当前天气，返回温度、天气描述、湿度等概要。
+
+    Args:
+        city (str): 城市名（英文或拼音），如 "Beijing"。
+    """
+    if not re.fullmatch(r"[A-Za-z .,'-]{1,100}", city):
+        return "ERROR: invalid city name."
+    timeout = httpx.Timeout(connect=5.0, read=15.0, write=15.0, pool=15.0)
+    import json
+
+    url = f"https://wttr.in/{city}?format=j1"
+    try:
+        resp = httpx.get(url, timeout=timeout, headers={"User-Agent": "agent-tool"})
+        resp.raise_for_status()
+    except httpx.HTTPError as e:
+        return f"ERROR: could not fetch weather: {e}"
+    try:
+        data = json.loads(resp.text)
+        current = data["current_condition"][0]
+        area = data["nearest_area"][0]
+        area_name = area.get("areaName", [{}])[0].get("value", city)
+        region = area.get("region", [{}])[0].get("value", "")
+        desc = current["weatherDesc"][0]["value"]
+        return (
+            f"Weather in {area_name}{', ' + region if region else ''}: "
+            f"{desc}, temperature {current['temp_C']}°C "
+            f"(feels like {current['FeelsLikeC']}°C), "
+            f"humidity {current['humidity']}%, "
+            f"wind {current['windspeedKmph']} km/h."
+        )
+    except (KeyError, IndexError, ValueError, json.JSONDecodeError) as e:
+        return f"ERROR: could not parse weather response: {e}"
+
+
+weather: BaseTool = tool(weather_func)
+weather.name = "Weather"
+
+
 # 格式化检索到的文档：保留 metadata，让模型能引用来源
 def format_contexts(docs) -> str:
     """把检索到的文档格式化为带来源标注的上下文。

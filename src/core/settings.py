@@ -101,8 +101,6 @@ class Settings(BaseSettings):
     COMPATIBLE_API_KEY: SecretStr | None = None
     COMPATIBLE_BASE_URL: str | None = None
 
-    OPENWEATHERMAP_API_KEY: SecretStr | None = None
-
     # Web 搜索（ddgs）配置
     WEB_SEARCH_PROXY: str = ""
     WEB_SEARCH_BACKENDS: str = "yahoo,duckduckgo"
