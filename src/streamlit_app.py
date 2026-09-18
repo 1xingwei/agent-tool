@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from client import AgentClient, AgentClientError
 from schema import ChatHistory, ChatMessage, UserThreads
-from schema.task_data import TaskData, TaskDataStatus
+from schema.task_data import TaskData
 from voice import VoiceManager
 
 # 一个 Streamlit 应用，通过简单的聊天界面与 langgraph agent 交互。
@@ -27,6 +27,46 @@ from voice import VoiceManager
 APP_TITLE = "Agent Service Toolkit"
 APP_ICON = "🧰"
 USER_ID_COOKIE = "user_id"
+
+
+class TaskDataStatus:
+    """把 bg-task-agent 的自定义数据渲染成 Streamlit 状态栏（UI 层类，归属调用方）。"""
+
+    def __init__(self) -> None:
+        self.status = st.status("")
+        self.current_task_data: dict[str, TaskData] = {}
+
+    def add_and_draw_task_data(self, task_data: TaskData) -> None:
+        status = self.status
+        status_str = f"Task **{task_data.name}** "
+        match task_data.state:
+            case "new":
+                status_str += "has :blue[started]. Input:"
+            case "running":
+                status_str += "wrote:"
+            case "complete":
+                if task_data.result == "success":
+                    status_str += ":green[completed successfully]. Output:"
+                else:
+                    status_str += ":red[ended with error]. Output:"
+        status.write(status_str)
+        status.write(task_data.data)
+        status.write("---")
+        if task_data.run_id not in self.current_task_data:
+            # 状态标签始终显示最近新启动的任务
+            status.update(label=f"""Task: {task_data.name}""")
+        self.current_task_data[task_data.run_id] = task_data
+        if all(entry.completed() for entry in self.current_task_data.values()):
+            # 若有任何任务出错，状态为 "error"
+            if any(entry.completed_with_error() for entry in self.current_task_data.values()):
+                state = "error"
+            # 若所有任务均成功完成，状态为 "complete"
+            else:
+                state = "complete"
+        # 在所有任务完成前，状态为 "running"
+        else:
+            state = "running"
+        status.update(state=state)  # type: ignore[arg-type]
 
 
 def tool_calls_visible() -> bool:

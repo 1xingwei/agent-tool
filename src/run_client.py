@@ -12,6 +12,17 @@ from schema import ChatMessage
 load_dotenv()
 
 
+def _print_message(message: ChatMessage) -> None:
+    """可读地打印一条消息（schemal 层不再提供 UI 方法，归位到调用方）。"""
+    base_title = message.type.title() + " Message"
+    padded = " " + base_title + " "
+    sep_len = (80 - len(padded)) // 2
+    sep = "=" * sep_len
+    second_sep = sep + "=" if len(padded) % 2 else sep
+    title = f"{sep}{padded}{second_sep}"
+    print(f"{title}\n\n{message.content}")  # noqa: T201
+
+
 async def amain() -> None:
     #### 异步 ####
     client = AgentClient(settings.BASE_URL)
@@ -23,7 +34,7 @@ async def amain() -> None:
     # 不显式指定模型：只有服务默认模型保证可用
     # （AVAILABLE_MODELS 取决于运维人员配置了哪些 provider key）。
     response = await client.ainvoke("Tell me a brief joke?")
-    response.pretty_print()
+    _print_message(response)
 
     print("\nStream example:")
     async for message in client.astream("Share a quick fun fact?"):
@@ -31,7 +42,7 @@ async def amain() -> None:
             print(message, flush=True, end="")
         elif isinstance(message, ChatMessage):
             print("\n", flush=True)
-            message.pretty_print()
+            _print_message(message)
         else:
             print(f"ERROR: Unknown type - {type(message)}")
 
@@ -47,7 +58,7 @@ def main() -> None:
     # 不显式指定模型：只有服务默认模型保证可用
     # （AVAILABLE_MODELS 取决于运维人员配置了哪些 provider key）。
     response = client.invoke("Tell me a brief joke?")
-    response.pretty_print()
+    _print_message(response)
 
     print("\nStream example:")
     for message in client.stream("Share a quick fun fact?"):
@@ -55,7 +66,7 @@ def main() -> None:
             print(message, flush=True, end="")
         elif isinstance(message, ChatMessage):
             print("\n", flush=True)
-            message.pretty_print()
+            _print_message(message)
         else:
             print(f"ERROR: Unknown type - {type(message)}")
 

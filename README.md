@@ -56,9 +56,9 @@ how graphs are wired at startup, and the design trade-offs.
 
 ### Documentation
 
-The Chinese docs live in `docs/`, flat and numbered `01`–`15` in reading order.
+The Chinese docs live in `docs/`, flat and numbered `01`–`17` in reading order.
 `01` is the architecture overview, `02`–`07` are provider and feature guides,
-`08`–`09` are design specs, and `10`–`15` are engineering records:
+`08`–`09` are design specs, and `10`–`17` are engineering records:
 
 | # | Doc | What it covers |
 |---|---|---|
@@ -77,6 +77,8 @@ The Chinese docs live in `docs/`, flat and numbered `01`–`15` in reading order
 | 13 | [面试材料与岗位对照](docs/13-面试材料与岗位对照.md) | Resume bullets and the JD capability check |
 | 14 | [注释中文化与审校](docs/14-注释中文化与审校.md) | The comment/docstring Chinese migration and its audit |
 | 15 | [记忆与检索层-对标核实与行动清单](docs/15-记忆与检索层-对标核实与行动清单.md) | Memory/retrieval industry baseline and the P0/P1 action list |
+| 16 | [精简与重构方案](docs/16-精简与重构方案.md) | Landing plan for the 8-item audit: dedup, scaffolding factory, schema/UI layering |
+| 17 | [审查台账](docs/17-审查台账.md) | The audit ledger: per-item evidence behind the 8 findings |
 
 ### Key Features
 
@@ -105,7 +107,7 @@ The repository is structured as follows:
 - `src/client/client.py`: Client to interact with the agent service
 - `src/streamlit_app.py`: Streamlit app providing a chat interface
 - `tests/`: Unit and integration tests
-- `docs/`: Chinese docs, flat and numbered `01`–`20` in reading order — `01` architecture overview, `02`–`07` provider and feature guides, `08`–`09` design specs, `10`–`20` engineering notes
+- `docs/`: Chinese docs, flat and numbered `01`–`17` in reading order — `01` architecture overview, `02`–`07` provider and feature guides, `08`–`09` design specs, `10`–`17` engineering notes
 - `scripts/`: Setup, smoke-test and local-start helpers
 - `docker/`: Dockerfiles and the optional MongoDB compose file
 - `data/`: Sample corpus used to build the Chroma index
@@ -192,12 +194,9 @@ from client import AgentClient
 client = AgentClient()
 
 response = client.invoke("Tell me a brief joke?")
-response.pretty_print()
-# ================================== Ai Message ==================================
-#
+print(response.content)
 # A man walked into a library and asked the librarian, "Do you have any books on Pavlov's dogs and Schrödinger's cat?"
 # The librarian replied, "It rings a bell, but I'm not sure if it's here or not."
-
 ```
 
 ### Development with LangGraph Studio

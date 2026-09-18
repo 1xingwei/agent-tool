@@ -123,19 +123,6 @@ class ChatMessage(BaseModel):
         default={},
     )
 
-    def pretty_repr(self) -> str:
-        """获取消息的可读表示。"""
-        base_title = self.type.title() + " Message"
-        padded = " " + base_title + " "
-        sep_len = (80 - len(padded)) // 2
-        sep = "=" * sep_len
-        second_sep = sep + "=" if len(padded) % 2 else sep
-        title = f"{sep}{padded}{second_sep}"
-        return f"{title}\n\n{self.content}"
-
-    def pretty_print(self) -> None:
-        print(self.pretty_repr())  # noqa: T201
-
 
 class Feedback(BaseModel):  # type: ignore[no-redef]
     """一次运行的反馈，记录到 LangSmith。"""
