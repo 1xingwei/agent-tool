@@ -1,3 +1,4 @@
+import hashlib
 import os
 import shutil
 import sys
@@ -16,6 +17,15 @@ from core.settings import settings
 
 # 从 .env 文件加载环境变量
 load_dotenv()
+
+
+def file_hash(file_path: str) -> str:
+    """计算源文件 sha256，作为 P0-9 索引对账字段（重建幂等的依据）。"""
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for block in iter(lambda: f.read(65536), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def create_chroma_db(
@@ -51,7 +61,7 @@ def create_chroma_db(
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=overlap)
 
     # 遍历文件夹中的文件
-    for filename in os.listdir(folder_path):
+    for filename in sorted(os.listdir(folder_path)):
         file_path = os.path.join(folder_path, filename)
 
         # 根据文件扩展名加载文档
@@ -68,12 +78,64 @@ def create_chroma_db(
         document = loader.load()
         chunks = text_splitter.split_documents(document)
 
+        # P0-9 索引对账：每个 chunk 带源文件哈希 + 稳定 id（source+hash+序号），
+        # 重建幂等 —— Chroma 按 id 覆盖，源文件未变时重复建库结果一致。
+        source_hash = file_hash(file_path)
+        ids = []
+        for i, chunk in enumerate(chunks):
+            chunk.metadata.setdefault("source", filename)
+            chunk.metadata["source_hash"] = source_hash
+            chunk.metadata.setdefault("page", 0)
+            ids.append(f"{filename}:{source_hash[:12]}:{i}")
+
         # 将块添加到 Chroma 向量存储
-        chroma.add_documents(chunks)
+        chroma.add_documents(chunks, ids=ids)
         print(f"Document {filename} added to database.")
 
+    _build_fts_sidecar(settings.CHROMA_FTS_DB, folder_path, text_splitter)
     print(f"Vector database created and saved in {db_name}.")
     return chroma
+
+
+def _build_fts_sidecar(fts_db: str, folder_path: str, text_splitter) -> None:
+    """建 FTS5 侧车库（docs/15 P0-8）：与 Chroma 同 chunk、同 id，支撑词法召回。
+
+    Chroma 只做向量；关键词命中（版本号、专有名词）要靠 FTS5。这里把在建库时
+    已经切好的 chunk 原文按同一 id 写入 SQLite FTS5，供读取侧做 RRF 融合。
+    侧车库是**可重建的派生索引**（P0-9 理念）：随时可删掉重建，不是真相来源。
+    """
+    import sqlite3
+
+    Path(fts_db).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(fts_db)
+    try:
+        conn.execute("DROP TABLE IF EXISTS chunks")
+        conn.execute("CREATE VIRTUAL TABLE chunks USING fts5(chunk_id, source, page, content)")
+        for filename in sorted(os.listdir(folder_path)):
+            file_path = os.path.join(folder_path, filename)
+            if filename.endswith(".pdf"):
+                loader = PyPDFLoader(file_path)
+            elif filename.endswith(".docx"):
+                loader = Docx2txtLoader(file_path)
+            elif filename.endswith((".md", ".txt")):
+                loader = TextLoader(file_path, encoding="utf-8")
+            else:
+                continue
+            document = loader.load()
+            chunks = text_splitter.split_documents(document)
+            source_hash = file_hash(file_path)
+            rows = []
+            for i, chunk in enumerate(chunks):
+                page = chunk.metadata.get("page", 0)
+                rows.append(
+                    (f"{filename}:{source_hash[:12]}:{i}", filename, page, chunk.page_content)
+                )
+            conn.executemany(
+                "INSERT INTO chunks(chunk_id, source, page, content) VALUES (?, ?, ?, ?)", rows
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":
@@ -92,4 +154,4 @@ if __name__ == "__main__":
 
     # 显示结果
     for i, doc in enumerate(similar_docs, start=1):
-        print(f"\n🔹 Result {i}:\n{doc.page_content}\nTags: {doc.metadata.get('source', [])}")
+        print(f"\nResult {i}:\n{doc.page_content}\nTags: {doc.metadata.get('source', [])}")

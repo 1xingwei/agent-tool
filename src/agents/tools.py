@@ -135,9 +135,10 @@ def reset_chroma_retriever() -> None:
 
 
 def database_search_func(query: str) -> str:
-    """在 chroma_db 中搜索公司手册中的信息。"""
-    retriever = load_chroma_db()
-    documents = retriever.invoke(query)
+    """在 chroma_db（向量）+ FTS5（词法）中搜索公司手册中的信息。"""
+    from rag.hybrid_retriever import hybrid_search
+
+    documents = hybrid_search(query)
     return format_contexts(documents)
 
 

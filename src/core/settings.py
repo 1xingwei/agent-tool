@@ -135,6 +135,10 @@ class Settings(BaseSettings):
     CHROMA_DIR: str = "./var/chroma_db"
     # 向量检索召回条数（原来是硬编码的 k=5）
     RAG_TOP_K: int = 5
+    # 混合检索：向量 + FTS5（docs/15 P0-8）。FTS 侧车库与 Chroma 同目录。
+    CHROMA_FTS_DB: str = "./var/chroma_fts.sqlite"
+    # 混合召回各自取多少条做 RRF 融合（融合前每路的候选数）
+    HYBRID_RECALL_K: int = 20
 
     # Embedding 配置：长期记忆 store 的语义检索与 RAG 向量化共用。
     # 默认本地 fastembed，不需要任何 API key；设为 openai 则需要 OPENAI_API_KEY。

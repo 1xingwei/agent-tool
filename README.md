@@ -56,9 +56,9 @@ how graphs are wired at startup, and the design trade-offs.
 
 ### Documentation
 
-The Chinese docs live in `docs/`, flat and numbered `01`–`17` in reading order.
+The Chinese docs live in `docs/`, flat and numbered `01`–`18` in reading order.
 `01` is the architecture overview, `02`–`07` are provider and feature guides,
-`08`–`09` are design specs, and `10`–`17` are engineering records:
+`08`–`09` are design specs, and `10`–`18` are engineering records:
 
 | # | Doc | What it covers |
 |---|---|---|
@@ -79,6 +79,7 @@ The Chinese docs live in `docs/`, flat and numbered `01`–`17` in reading order
 | 15 | [记忆与检索层-对标核实与行动清单](docs/15-记忆与检索层-对标核实与行动清单.md) | Memory/retrieval industry baseline and the P0/P1 action list |
 | 16 | [精简与重构方案](docs/16-精简与重构方案.md) | Landing plan for the 8-item audit: dedup, scaffolding factory, schema/UI layering |
 | 17 | [审查台账](docs/17-审查台账.md) | The audit ledger: per-item evidence behind the 8 findings |
+| 18 | [代码审核与落地验收](docs/18-代码审核与落地验收.md) | Verification round: the 8 fixes accepted, plus gate/doc-drift findings |
 
 ### Key Features
 
@@ -107,7 +108,7 @@ The repository is structured as follows:
 - `src/client/client.py`: Client to interact with the agent service
 - `src/streamlit_app.py`: Streamlit app providing a chat interface
 - `tests/`: Unit and integration tests
-- `docs/`: Chinese docs, flat and numbered `01`–`17` in reading order — `01` architecture overview, `02`–`07` provider and feature guides, `08`–`09` design specs, `10`–`17` engineering notes
+- `docs/`: Chinese docs, flat and numbered `01`–`18` in reading order — `01` architecture overview, `02`–`07` provider and feature guides, `08`–`09` design specs, `10`–`18` engineering notes
 - `scripts/`: Setup, smoke-test and local-start helpers
 - `docker/`: Dockerfiles and the optional MongoDB compose file
 - `data/`: Sample corpus used to build the Chroma index
