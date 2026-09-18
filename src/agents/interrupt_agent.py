@@ -96,15 +96,7 @@ async def determine_birthdate(
 
         # 检查 store 中是否已存在该用户的出生日期
         try:
-            result = await store.aget(namespace, key=key)
-            # 处理 store.aget 可能直接返回 Item 或返回列表的情况
-            user_data = None
-            if result:  # 检查是否有任何返回
-                if isinstance(result, list):
-                    if result:  # 检查列表是否非空
-                        user_data = result[0]
-                else:  # 假设它直接就是 Item 对象
-                    user_data = result
+            user_data = await store.aget(namespace, key=key)
 
             if user_data and user_data.value.get("birthdate"):
                 # 将 ISO 格式字符串转换回 datetime 对象
@@ -149,28 +141,28 @@ async def determine_birthdate(
         structured,
         birthdate_extraction_prompt.format(),
     ).with_config(tags=["skip_stream"])
-    response: BirthdateExtraction = await model_runnable.ainvoke(state, config)
+    # 自递归改循环：原先两处 `return await determine_birthdate(...)` 的深度由用户
+    # 输入次数决定、没有上界。改成循环后每轮复用同一个 model_runnable。
+    while True:
+        response: BirthdateExtraction = await model_runnable.ainvoke(state, config)
 
-    # 如果提取尝试后仍未找到出生日期，则中断
-    if response.birthdate is None:
-        birthdate_input = interrupt(f"{response.reasoning}\nPlease tell me your birthdate?")
-        # 使用新输入重新执行提取
-        state["messages"].append(HumanMessage(birthdate_input))
-        # 注意：递归调用可能需要谨慎处理深度或状态更新
-        return await determine_birthdate(state, config, store)
+        if response.birthdate is None:
+            # 提取不到：请用户直接告知出生日期
+            prompt = f"{response.reasoning}\nPlease tell me your birthdate?"
+        else:
+            # 找到出生日期 - 将字符串转换为 datetime
+            try:
+                birthdate = datetime.fromisoformat(response.birthdate)
+                break
+            except ValueError:
+                # 解析失败：请用户按格式澄清
+                prompt = (
+                    "I couldn't understand the date format. "
+                    "Please provide your birthdate in YYYY-MM-DD format."
+                )
 
-    # 找到出生日期 - 将字符串转换为 datetime
-    try:
-        birthdate = datetime.fromisoformat(response.birthdate)
-    except ValueError:
-        # 如果解析失败，请求澄清
-        birthdate_input = interrupt(
-            "I couldn't understand the date format. Please provide your birthdate in YYYY-MM-DD format."
-        )
-        # 使用新输入重新执行提取
-        state["messages"].append(HumanMessage(birthdate_input))
-        # 注意：递归调用可能需要谨慎处理深度或状态更新
-        return await determine_birthdate(state, config, store)
+        # 把用户的回答就地追加进 state（保持原有的就地 append 语义），再重新提取
+        state["messages"].append(HumanMessage(interrupt(prompt)))
 
     # 仅在有 user_id 时存储新提取的出生日期
     if user_id and namespace:
