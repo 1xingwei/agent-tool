@@ -4,7 +4,7 @@
 
 - **纯函数层**（`plan_distillation` / `apply_distillation` / `build_summary_prompt`）
   完全离线，用假模型驱动，断言的是判定与改写的不变量。
-- **协议层**（`distill_history` 真实调模型、`_distill_input` 真实改写）
+- **协议层**（`distill_history` 真实调模型、`_handle_input` 的 interrupt 分支）
   必须真跑，因为被守护的缺陷都住在「消息 id 对不对得上」「模型回的
   content 是不是 list」这类只有真调用才暴露的地方。
 
@@ -287,58 +287,9 @@ def _state_with(messages: list, summary: str = "", tasks: tuple = ()) -> StateSn
     )
 
 
-def test_distill_input_prepends_summary_view(_distill_on):
-    from service.service import _distill_input
-
-    messages = _history(10)
-    payload = {"messages": [HumanMessage(content="最新的问题")]}
-    out = _distill_input(payload, _state_with(messages, "历史摘要"))
-
-    assert len(out["messages"]) < len(messages) + 1
-    assert isinstance(out["messages"][0], HumanMessage)
-    assert "历史摘要" in out["messages"][0].content
-    # 本轮输入必须仍在最后
-    assert out["messages"][-1].content == "最新的问题"
-
-
-def test_distill_input_is_noop_without_summary(_distill_on):
-    """没有摘要时不改写。
-
-    这里**必须**同时把 `apply_distillation` 打桩成「一定会改写」，否则用例是
-    假的：真实实现自己也对空摘要短路，即使 service 层的守卫被删掉，
-    调用链最终仍然返回原样，用例照样绿。守卫被拿掉的缺陷就从这个缝里漏过去。
-
-    打桩后语义变成：「若 service 层把空摘要当有效摘要传下去，会不会改写？」
-    —— 会，所以用例真的在测 service 层自己那道闸。
-    """
-    from service.service import _distill_input
-
-    payload = {"messages": [HumanMessage(content="hi")]}
-    marker = HumanMessage(content="被改写过的历史")
-    with patch("service.service.apply_distillation", return_value=[marker]):
-        out = _distill_input(payload, _state_with(_history(10), ""))
-    assert out["messages"] == payload["messages"], "没有摘要时不应把历史拼进 input"
-
-
-def test_distill_input_is_noop_when_disabled(monkeypatch):
-    from service.service import _distill_input
-
-    monkeypatch.setattr(settings, "DISTILL_ENABLED", False)
-    payload = {"messages": [HumanMessage(content="hi")]}
-    assert _distill_input(payload, _state_with(_history(10), "摘要")) is payload
-
-
-def test_distill_input_is_noop_for_empty_thread(_distill_on):
-    from service.service import _distill_input
-
-    payload = {"messages": [HumanMessage(content="hi")]}
-    out = _distill_input(payload, _state_with([], "摘要"))
-    assert out["messages"] == payload["messages"]
-
-
 @pytest.mark.asyncio
 async def test_handle_input_does_not_distill_on_interrupt_resume(_distill_on):
-    """恢复 interrupt 时不能改写——`Command` 是控制指令，不是消息。"""
+    """恢复 interrupt 时输入必须是 `Command`，不能变成 dict 消息。"""
     from langgraph.types import Command, Interrupt
 
     from service.service import _handle_input
@@ -357,5 +308,4 @@ async def test_handle_input_does_not_distill_on_interrupt_resume(_distill_on):
     )
 
     assert isinstance(kwargs["input"], Command)
-    # 未被换成 dict，说明读取侧没有介入
-    assert not isinstance(kwargs["input"], dict)
+    assert kwargs["input"].resume == "确认"

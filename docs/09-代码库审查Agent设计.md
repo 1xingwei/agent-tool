@@ -30,7 +30,7 @@ Project: agent-service-toolkit（面试展示）
 注册在 `src/agents/agents.py:38`：`"code-reviewer"` → `Agent(graph_like=code_reviewer)`，
 复用 FastAPI `/stream` + Streamlit UI + checkpointer/store 全套基础设施，与其它 agent 同构。
 
-**当前图**（`src/agents/code_reviewer.py:183-239`）：
+**当前图**（`src/agents/code_reviewer.py:132-149` 装配；骨架节点都来自 `src/agents/graph_factory.py`）：
 
 ```text
 guard_input(entry) ──check_safety──┬─ unsafe → block_unsafe_content → END
@@ -42,10 +42,10 @@ guard_input(entry) ──check_safety──┬─ unsafe → block_unsafe_conten
 ```
 
 即：**安全闸 → 记忆读 → 会话蒸馏 → 模型**，模型侧带工具回环，收尾写记忆。
-图构造仍是 `StateGraph + RemainingSteps + ToolNode + pending_tool_calls`，
-与 `loop_agent.py` 同一套写法。
+图由 `build_tool_agent_graph` 按 5 节点骨架装配（`graph_factory.py:98`），
+`code_reviewer` 通过 `extra_nodes` / `extra_edges` 挂记忆读、蒸馏与记忆写节点。
 
-### 1.1 状态（`AgentState`，`code_reviewer.py:21-28`）
+### 1.1 状态（`AgentState`，`graph_factory.py:26-32`，共享）
 
 | 字段 | 类型 | 谁写 | 为什么存在 |
 |---|---|---|---|
@@ -66,22 +66,24 @@ guard_input(entry) ──check_safety──┬─ unsafe → block_unsafe_conten
 
 | 节点 | 位置 | 做什么 | 边界与取舍 |
 |---|---|---|---|
-| `guard_input` | `:171` | `Safeguard().ainvoke(messages)` → `safety` | **可选**：`GROQ_API_KEY` 为空时 `Safeguard.model=None` 并直接返回 `SAFE`（`safeguard.py:92-93,112-113`），本机走的就是这条降级路径 |
-| `check_safety` | `:197` | 条件边：`UNSAFE` → `unsafe`，其余 → `safe` | 用 `match` 而非 `if`，未知取值落 `safe` |
-| `block_unsafe_content` | `:177` | 拼一条显式拒答 `AIMessage` → END | 不进入模型，也就不消耗模型调用 |
-| `recall_reviews` | `:101` | 读路径：`store.asearch(namespace, query=最后一条人类消息, limit=3)` | 见 §4；`score is None` 一律跳过 |
+| `guard_input` | `graph_factory.py:69` | `Safeguard().ainvoke(messages)` → `safety` | **可选**：`GROQ_API_KEY` 为空时 `Safeguard.model=None` 并直接返回 `SAFE`（`safeguard.py:92-93,112-113`），本机走的就是这条降级路径 |
+| `check_safety` | `graph_factory.py:80` | 条件边：`UNSAFE` → `unsafe`，其余 → `safe` | 用 `match` 而非 `if`，未知取值落 `safe` |
+| `block_unsafe_content` | `graph_factory.py:75` | 拼一条显式拒答 `AIMessage` → END | 不进入模型，也就不消耗模型调用 |
+| `recall_reviews` | `code_reviewer.py:62` | 读路径：`store.asearch(namespace, query=最后一条人类消息, limit=3)` | 见 §4；`score is None` 一律跳过 |
 | `distill_history` | `core/distill.py` | 阈值触发 LLM 摘要，产出 `distilled_summary` | **同步节点**（内部 `model.invoke`）；关闭时只做一次阈值判断并返回 `{"messages": []}` |
-| `model` | `:73` | `wrap_model(model).ainvoke(state)`，即 `[SystemMessage] + state["messages"]` | `remaining_steps < 2` 且仍有 `tool_calls` → 回「Sorry, need more steps to process this request.」 |
-| `tools` | `:185` | `ToolNode(tools)` | 固定 `tools → model`，回环由 `pending_tool_calls` 控制 |
-| `remember_review` | `:149` | 把最终结论 `aput` 进 store | 三重守卫，见 §4 |
+| `model` | `graph_factory.py:115` | `wrap_model(model).ainvoke(state)`，即 `[SystemMessage] + state["messages"]`（经 `apply_distillation` 折叠） | `remaining_steps < 2` 且仍有 `tool_calls` → 回「Sorry, need more steps to process this request.」 |
+| `tools` | `graph_factory.py:135` | `ToolNode(tools)` | 固定 `tools → model`，回环由 `pending_tool_calls` 控制 |
+| `remember_review` | `code_reviewer.py:110` | 把最终结论 `aput` 进 store | 三重守卫，见 §4 |
 
-### 2.1 提示词组装（`wrap_model`，`:49-63`）
+### 2.1 提示词组装（`wrap_model`，`graph_factory.py:35-59`）
 
 ```text
-[SystemMessage(instructions [+ 召回历史结论块])] + state["messages"]
+[SystemMessage(instructions [+ 召回历史结论块])] + apply_distillation(state["messages"], distilled_summary)
 ```
 
-`instructions`（`:34-46`）是**英文**的，末尾一句 `Chat content in the user's language`
+`code_reviewer.wrap_model` 是对工厂 `_wrap_model` 的薄转发
+（`code_reviewer.py:47-49`，接缝要求不能删，见 `docs/16` §1）。
+`instructions`（`code_reviewer.py:19-31`）是**英文**的，末尾一句 `Chat content in the user's language`
 把回答语言交给用户语言决定。这一点是刻意的：`docs/14` 的中文化只覆盖注释与
 docstring，**不译提示词**。召回到历史结论时，会在 system 后追加一段中文说明，
 要求模型区分「哪些是历史结论、哪些是本次新发现」。
@@ -117,19 +119,20 @@ docstring，**不译提示词**。召回到历史结论时，会在 system 后�
 
 读侧的**判据**值得单独写下来：`score is None` 表示 store 未开启语义检索，此时
 `asearch` 不报错、仍返回结果，但排序是主键序 —— 那种结果不可信。因此代码
-**按 score 是否有效过滤，而不是按「结果是否为空」判断**（`code_reviewer.py:136-140`）。
+**按 score 是否有效过滤，而不是按「结果是否为空」判断**（`code_reviewer.py:97-101`）。
 `user_id` 缺失时落 `"anonymous"`。
 
 ## 5. 会话蒸馏的接线
 
-`distill_history` 插在 `recall_reviews → model` 之间（`:214,217`），语义是
+`distill_history` 插在 `recall_reviews → model` 之间
+（装配在 `code_reviewer.py:143-146` 的 `extra_edges`），语义是
 **只折叠「送给模型的那份视图」**：checkpoint 原文一条不删，`/history` 永远是全量。
 
 - 默认 `DISTILL_ENABLED=False`，不配置即零行为变化。
 - 摘要写在 `state["distilled_summary"]`，**不进 `messages`**，否则 `/history` 会被污染。
-- ⚠️ **该折叠当前没有到达 `model` 节点**：`acall_model` 直接用 `state["messages"]`，
-  并未调用 `apply_distillation`。实测摘要长度 7、模型历次收到 `[1,3,…,23]` 全量。
-  根因与修法见 `docs/15` §7.2.3 —— 本文只声明接线，不把它记成「已生效」。
+- 折叠真的到达 `model`：工厂 `_wrap_model.build_messages`（`graph_factory.py:48-56`）
+  构造视图时调用 `apply_distillation`，模型看到的是折叠后的消息。
+  实际修法见 `docs/15` §7.2.3（已执行）。
 
 ## 6. 交互契约
 
@@ -144,8 +147,8 @@ docstring，**不译提示词**。召回到历史结论时，会在 system 后�
 | 文件 | 用例数 | 覆盖 |
 |---|---|---|
 | `tests/agents/test_code_reviewer.py` | 9 | 图编译断言、工具只读断言、`tmp_path` 真建 git 仓库跑 `git_log`/`git_diff`、**非 ASCII 提交解码回归**、`file_search`/`read_file`、`..` 穿越拦截、`remember_review` 写入与无 store no-op |
-| `tests/agents/test_memory_read_path.py` | 12 | store 传不传 `index` 的 score 对照、`recall_reviews` 命中/跳过/无 store/namespace 隔离/空输入/异常不炸、**召回内容确实进了 system prompt**、model 前存在 `distill_history` 的边 |
-| `tests/core/test_distill.py` | 26 | `plan_distillation` / `apply_distillation` / `distill_history` / `_distill_input` 的判定、改写与不变量 |
+| `tests/agents/test_memory_read_path.py` | 13 | store 传不传 `index` 的 score 对照、`recall_reviews` 命中/跳过/无 store/namespace 隔离/空输入/异常不炸、**召回内容确实进了 system prompt**、**折叠发生在 model 入参上**（去掉 `apply_distillation` 必须变红）、model 前存在 `distill_history` 的边 |
+| `tests/core/test_distill.py` | 22 | `plan_distillation` / `apply_distillation` / `distill_history` 的判定、改写与不变量（`_distill_input` 已随 docs/16 第 7 项删除） |
 
 - 全部走 `tmp_path` **自建**仓库，不依赖 CI 的 git 状态（CI 无 git 上下文也能跑）。
 - 编译断言现在是 `{"model", "tools", "remember_review"} <= nodes`，另有一条专门断言

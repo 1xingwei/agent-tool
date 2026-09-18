@@ -223,6 +223,30 @@ def test_recalled_reviews_is_injected_into_system_prompt() -> None:
     assert "硬编码密钥" in system
 
 
+def test_model_sees_folded_view() -> None:
+    """折叠必须发生在 model 的入参上 —— 这是 P0-7 唯一有意义的判据。
+
+    反例：把 apply_distillation 从 build_messages 里去掉，本用例必须变红。
+    """
+    from core.llm import FakeToolModel
+
+    captured: dict = {}
+
+    class SpyModel(FakeToolModel):
+        def invoke(self, input, config=None, **kwargs):  # type: ignore[override]
+            captured["count"] = len(input) if isinstance(input, list) else None
+            return super().invoke(input, config, **kwargs)
+
+    from agents.code_reviewer import wrap_model
+
+    # 30 条远超 `settings.DISTILL_KEEP_MESSAGES`（默认 12），必然触发折叠。
+    history = [HumanMessage(content=f"第 {i} 条") for i in range(30)]
+    runnable = wrap_model(SpyModel(responses=["ok"]))  # type: ignore[arg-type]
+    runnable.invoke({"messages": history, "distilled_summary": "摘要"})
+
+    assert captured["count"] < len(history), "model 没有看到折叠后的视图"
+
+
 def test_code_reviewer_graph_has_recall_before_model() -> None:
     """结构守卫：recall 必须在 model 之前，否则召回内容进不了提示词。
 
