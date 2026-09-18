@@ -1,8 +1,12 @@
 """工具类多智能体图的共享装配工厂（docs/16 第 2 项）。
 
 `build_tool_agent_graph` 按「guard_input → model → tools」+ 安检骨架装配图，
-`_wrap_model` 是视图构造（含会话蒸馏折叠）的唯一实现。不 import
-`agents.agents`（其 `AgentGraph` 定义在那里，会成环）。
+`_wrap_model` 是**走工厂的 agent** 的视图构造（含会话蒸馏折叠）唯一实现。
+
+注意「唯一」只对工厂成立：另有 4 处手写图自带视图构造、不经过这里，
+因此**不带**蒸馏折叠 —— `loop_agent`（最典型的长对话 ReAct agent）、
+`knowledge_base_agent`、`interrupt_agent`、`bg_task_agent`（docs/19 R3）。
+不 import `agents.agents`（其 `AgentGraph` 定义在那里，会成环）。
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -41,8 +45,9 @@ def _wrap_model(
 ) -> RunnableSerializable[AgentState, AIMessage]:
     """构造「视图 → 绑定工具的模型」这条链。
 
-    视图构造（含蒸馏折叠）全仓只有这一个实现；各 agent 想改视图只能通过
-    `system_suffix` 钩子，改不了折叠本身。
+    视图构造（含蒸馏折叠）在**工厂内**只有这一个实现；走工厂的 agent 想改视图
+    只能通过 `system_suffix` 钩子，改不了折叠本身。全仓另有 4 处手写图的视图
+    构造不经此处（见模块 docstring），它们没有蒸馏折叠。
     """
 
     def build_messages(state: AgentState) -> list:

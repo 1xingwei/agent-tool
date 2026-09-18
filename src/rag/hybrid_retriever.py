@@ -52,15 +52,25 @@ def _fts_hits(query: str, k: int) -> list[Document]:
 
 
 def _vector_hits(query: str, k: int) -> list[Document]:
-    """从 Chroma 召回 top-k 片段（进程内共享 retriever 单例）。"""
-    retriever = load_chroma_db()
-    return retriever.invoke(query)[:k]
+    """从 Chroma 召回 top-k 片段。
+
+    **不复用** `load_chroma_db()` 返回的那个 retriever：它的 `search_kwargs` 在
+    `agents/tools.py` 构造时就被钉成 `{"k": settings.RAG_TOP_K}`（默认 5），
+    所以 `retriever.invoke(query)[:k]` 里的 `[:k]` 是个**永不生效的截断** ——
+    调用方传 20 只会拿到 5 条，`HYBRID_RECALL_K`（默认 20）对向量路完全失效，
+    两路候选池不对等，RRF 融合会系统性偏向 FTS（docs/19 R2）。
+    这里直接向底层 vectorstore 要 k 条，让 `k` 真正生效。
+    """
+    return load_chroma_db().vectorstore.similarity_search(query, k=k)
 
 
-def _rrf_merge(listings: list[list[Document]], k: int, top_k: int) -> list[Document]:
+def _rrf_merge(listings: list[list[Document]], top_k: int) -> list[Document]:
     """对多路排名做 RRF 融合。
 
-    RRF 分数 = Σ 1 / (RRF_K + rank)，rank 从 1 计。按分数降序后去重取 top_k。
+    平滑常数固定取模块级 `RRF_K`、**不由调用方传** —— 它定义的是 RRF 算法本身，
+    不是每次检索的可调项（此前签名里挂着一个从未被使用的 `k` 参数，容易让人
+    以为融合行为可调）。RRF 分数 = Σ 1 / (RRF_K + rank)，rank 从 1 计；
+    按分数降序后去重取 top_k。
     """
     scores: dict[str, float] = {}
     by_key: dict[str, Document] = {}
@@ -70,8 +80,8 @@ def _rrf_merge(listings: list[list[Document]], k: int, top_k: int) -> list[Docum
             key = chunk_id or doc.page_content[:128]
             scores[key] = scores.get(key, 0.0) + 1.0 / (RRF_K + rank)
             by_key.setdefault(key, doc)
-    ranked = sorted(scores, key=lambda k: scores[k], reverse=True)[:top_k]
-    return [by_key[k] for k in ranked]
+    ranked = sorted(scores, key=lambda key: scores[key], reverse=True)[:top_k]
+    return [by_key[key] for key in ranked]
 
 
 def hybrid_search(query: str, top_k: int | None = None) -> list[Document]:
@@ -86,4 +96,4 @@ def hybrid_search(query: str, top_k: int | None = None) -> list[Document]:
     fts = _fts_hits(query, recall_k)
     if not fts:
         return vector[:top_k]
-    return _rrf_merge([vector, fts], recall_k, top_k)
+    return _rrf_merge([vector, fts], top_k)

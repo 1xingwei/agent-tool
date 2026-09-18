@@ -5,6 +5,8 @@ import pytest
 from langchain_core.language_models import FakeMessagesListChatModel
 from langchain_core.messages import BaseMessage
 
+from core.settings import settings
+
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -31,6 +33,22 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "network" in item.keywords:
                 item.add_marker(skip_network)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_fts_sidecar(tmp_path, monkeypatch):
+    """全局兜底：默认把 FTS 侧车库指到临时目录，任何测试都别碰生产索引。
+
+    `settings.CHROMA_FTS_DB` 的默认值是**相对 CWD 的 `./var/chroma_fts.sqlite`**，
+    也就是生产 RAG 索引；而 `create_chroma_db` 建库时会先 `DROP TABLE` 再重建。
+    因此只要有一个测试忘了显式隔离，跑一次测试就会把生产索引覆盖成测试语料 ——
+    这在 `tests/test_ingest.py` 与 `tests/agents/test_hybrid_retrieval.py` 上
+    各实测发生过一次（docs/19 R1）。
+
+    这里做系统性兜底而不是逐点打补丁：需要断言「默认取 settings」这条分支的用例
+    （如 `test_ingest_builds_fts_sidecar`）可以在测试体内再 monkeypatch 覆盖回来。
+    """
+    monkeypatch.setattr(settings, "CHROMA_FTS_DB", str(tmp_path / "chroma_fts.sqlite"))
 
 
 @pytest.fixture

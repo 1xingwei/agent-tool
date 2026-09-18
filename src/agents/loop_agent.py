@@ -17,7 +17,6 @@ SEARCH_BUDGET = 4  # 超过此后摘掉 WebSearch，模型失去空转条件
 
 class AgentState(MessagesState, total=False):
     remaining_steps: RemainingSteps
-    search_calls: int
 
 
 tools = [calculator, web_search, fetch_url]
@@ -76,8 +75,9 @@ def wrap_model(
 
 async def acall_model(state: AgentState, config: RunnableConfig) -> AgentState:
     m = get_model(config["configurable"].get("model", settings.DEFAULT_MODEL))
-    search_calls = _search_calls_in(state["messages"])
-    budget_exhausted = search_calls >= SEARCH_BUDGET
+    # 每轮从消息历史里重算搜索次数：不往 state 里维护计数通道，否则会多出一个
+    # 「写了但没人读」的冗余字段（docs/19 R6）。
+    budget_exhausted = _search_calls_in(state["messages"]) >= SEARCH_BUDGET
     response = await wrap_model(m, budget_exhausted).ainvoke(state, config)
 
     if state["remaining_steps"] <= 1 and response.tool_calls:
@@ -89,7 +89,7 @@ async def acall_model(state: AgentState, config: RunnableConfig) -> AgentState:
                 )
             ]
         }
-    return {"messages": [response], "search_calls": search_calls}
+    return {"messages": [response]}
 
 
 def pending_tool_calls(state: AgentState) -> Literal["tools", "done"]:

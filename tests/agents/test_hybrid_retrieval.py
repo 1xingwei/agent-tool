@@ -29,7 +29,7 @@ def test_rrf_favors_documents_in_both_lists() -> None:
     vector = [_doc("only-vector", "v"), _doc("both", "b")]
     fts = [_doc("only-fts", "f"), _doc("both", "b")]
 
-    merged = hr._rrf_merge([vector, fts], k=20, top_k=3)
+    merged = hr._rrf_merge([vector, fts], top_k=3)
     keys = [(d.metadata or {}).get("chunk_id") for d in merged]
 
     assert keys[0] == "b", f"两路都命中的片段应排第一，实际 {keys}"
@@ -38,7 +38,7 @@ def test_rrf_favors_documents_in_both_lists() -> None:
 
 def test_rrf_respects_top_k() -> None:
     docs = [_doc(f"d{i}", f"k{i}") for i in range(5)]
-    merged = hr._rrf_merge([docs], k=20, top_k=2)
+    merged = hr._rrf_merge([docs], top_k=2)
     assert len(merged) == 2
 
 
@@ -46,7 +46,7 @@ def test_rrf_dedupes_same_chunk_across_lists() -> None:
     """同一 chunk_id 不能因为两路都出现而产生两个结果。"""
     vector = [_doc("same", "dup")]
     fts = [_doc("same", "dup")]
-    merged = hr._rrf_merge([vector, fts], k=20, top_k=5)
+    merged = hr._rrf_merge([vector, fts], top_k=5)
     assert len(merged) == 1
 
 
@@ -85,6 +85,31 @@ def test_hybrid_search_merges_when_sidecar_present(monkeypatch, tmp_path) -> Non
     assert "semantic" in texts and "keyword matching content" in texts
 
 
+def test_vector_hits_honors_requested_k(monkeypatch) -> None:
+    """P0-8 守卫（docs/19 R2）：向量路必须按调用方给的 k 召回。
+
+    反例：把 `_vector_hits` 改回 `load_chroma_db().invoke(query)[:k]` —— 那个
+    retriever 的 `search_kwargs` 在 `agents/tools.py` 被钉成
+    `{"k": settings.RAG_TOP_K}`（默认 5），于是 `[:k]` 是永不生效的截断，
+    `HYBRID_RECALL_K`（默认 20）对向量路完全失效。本用例届时必须变红。
+    """
+    from core.settings import settings
+
+    class _FakeVectorStore:
+        def similarity_search(self, query: str, k: int) -> list[Document]:
+            return [_doc(f"d{i}", f"c{i}") for i in range(k)]
+
+    class _FakeRetriever:
+        vectorstore = _FakeVectorStore()
+
+    monkeypatch.setattr(hr, "load_chroma_db", lambda: _FakeRetriever())
+
+    out = hr._vector_hits("q", settings.HYBRID_RECALL_K)
+
+    assert settings.HYBRID_RECALL_K > settings.RAG_TOP_K, "前置：默认配置下 recall_k 应大于 top_k"
+    assert len(out) == settings.HYBRID_RECALL_K, "向量路没有按请求的 k 召回（R2 回归）"
+
+
 # --- P0-9 索引对账 ---
 
 
@@ -111,6 +136,7 @@ def test_ingest_stamps_source_hash_and_stable_ids(tmp_path) -> None:
     chroma = ingest.create_chroma_db(
         str(tmp_path),
         db_name=str(tmp_path / "db"),
+        fts_db=str(tmp_path / "fts.sqlite"),  # 不隔离就会写生产索引（docs/19 R1）
         embeddings=DeterministicFakeEmbedding(size=32),
     )
 
@@ -124,6 +150,7 @@ def test_ingest_stamps_source_hash_and_stable_ids(tmp_path) -> None:
     chroma2 = ingest.create_chroma_db(
         str(tmp_path),
         db_name=str(tmp_path / "db2"),
+        fts_db=str(tmp_path / "fts.sqlite"),  # 同上
         embeddings=DeterministicFakeEmbedding(size=32),
     )
     assert set(chroma2.get()["ids"]) == ids_1, "P0-9 回归：同内容重建 id 不稳定"

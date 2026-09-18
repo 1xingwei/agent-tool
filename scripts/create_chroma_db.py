@@ -31,12 +31,17 @@ def file_hash(file_path: str) -> str:
 def create_chroma_db(
     folder_path: str,
     db_name: str | None = None,
+    fts_db: str | None = None,
     delete_chroma_db: bool = False,
     chunk_size: int = 2000,
     overlap: int = 500,
     embeddings: Embeddings | None = None,
 ):
     db_name = db_name or settings.CHROMA_DIR
+    # FTS 侧车库同样允许调用方覆盖：默认落 settings.CHROMA_FTS_DB（相对 CWD 的 var/），
+    # 但该默认值是**生产索引**，因此测试必须显式传 tmp_path，否则会把测试语料
+    # 写进真实索引（`_build_fts_sidecar` 会先 DROP TABLE 再重建）。见 docs/19 R1。
+    fts_db = fts_db or settings.CHROMA_FTS_DB
     if embeddings is None:
         # 与检索侧共用同一个 embedding 来源（core.embeddings）。
         # 建库与检索必须用**同一个模型**，否则向量空间不一致、检索结果静默失真。
@@ -92,7 +97,7 @@ def create_chroma_db(
         chroma.add_documents(chunks, ids=ids)
         print(f"Document {filename} added to database.")
 
-    _build_fts_sidecar(settings.CHROMA_FTS_DB, folder_path, text_splitter)
+    _build_fts_sidecar(fts_db, folder_path, text_splitter)
     print(f"Vector database created and saved in {db_name}.")
     return chroma
 

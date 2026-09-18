@@ -82,7 +82,13 @@ async def load_agent(agent_id: str) -> None:
 
 
 def get_agent(agent_id: str) -> AgentGraph:
-    """获取 agent 图，按需加载惰性 agent。"""
+    """获取 agent 图。
+
+    注意**不会**加载惰性 agent：若该 agent 尚未 `load()`，这里抛 `RuntimeError`
+    （真正负责加载的是 `load_agent`）。这个区分是有意的 ——
+    `service._resolve_agent` 只把 `KeyError` 映射成 404，把 `RuntimeError` 留给
+    500，因为「没加载」是服务器状态问题，不该伪装成「agent 不存在」。
+    """
     agent_graph = agents[agent_id].graph_like
 
     # 如果是惰性加载 agent，确保其已加载并返回其图
