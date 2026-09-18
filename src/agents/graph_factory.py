@@ -100,7 +100,7 @@ def build_tool_agent_graph(
     tools: Sequence[BaseTool],
     instructions: str,
     system_suffix: Callable[[AgentState], str] | None = None,
-    extra_nodes: Mapping[str, Callable[..., Any]] = {},
+    extra_nodes: Mapping[str, Callable[..., Any]] | None = None,
     extra_edges: Sequence[tuple[str, str]] = (),
     guard_next: str = "model",
     done_node: str = END,
@@ -134,7 +134,7 @@ def build_tool_agent_graph(
     builder.add_node("model", acall_model)
     builder.add_node("tools", ToolNode(tools))
     builder.add_node("block_unsafe_content", block_unsafe_content)
-    for name, node in extra_nodes.items():
+    for name, node in (extra_nodes or {}).items():
         builder.add_node(name, node)
     builder.set_entry_point("guard_input")
 

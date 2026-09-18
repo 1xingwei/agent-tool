@@ -99,6 +99,32 @@ def test_stream(agent_client):
         assert list(agent_client.stream("q")) == ["tok1", "tok2"]
 
 
+def test_sync_bridge_propagates_error(agent_client):
+    """同步桥必须原样透传异步层抛出的 AgentClientError。
+
+    asyncio.run 分支：_run_sync 把 coro 的异常原样复抛给调用方。
+    """
+    with patch.object(
+        agent_client, "ainvoke", new=AsyncMock(side_effect=AgentClientError("boom"))
+    ):
+        with pytest.raises(AgentClientError) as exc:
+            agent_client.invoke("q")
+    assert str(exc.value) == "boom"
+
+
+def test_sync_stream_propagates_error(agent_client):
+    """同步流桥接也必须原样透传 astream 的 AgentClientError。"""
+
+    async def boom_astream(*args, **kwargs):
+        raise AgentClientError("boom")
+        yield
+
+    with patch.object(agent_client, "astream", new=boom_astream):
+        with pytest.raises(AgentClientError) as exc:
+            list(agent_client.stream("q"))
+    assert str(exc.value) == "boom"
+
+
 @pytest.mark.asyncio
 async def test_sync_call_inside_running_loop(agent_client):
     """守卫 streamlit_app.py 的嵌套场景。
@@ -108,6 +134,17 @@ async def test_sync_call_inside_running_loop(agent_client):
     """
     with patch.object(agent_client, "aget_user_threads", new=AsyncMock(return_value="T")):
         assert agent_client.get_user_threads("u") == "T"
+
+
+@pytest.mark.asyncio
+async def test_sync_error_inside_running_loop(agent_client):
+    """线程分支的错误透传：loop 内同步调用遇到异步异常同样原样复抛。"""
+    with patch.object(
+        agent_client, "aget_user_threads", new=AsyncMock(side_effect=AgentClientError("boom"))
+    ):
+        with pytest.raises(AgentClientError) as exc:
+            agent_client.get_user_threads("u")
+    assert str(exc.value) == "boom"
 
 
 @pytest.mark.asyncio

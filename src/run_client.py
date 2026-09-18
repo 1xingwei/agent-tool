@@ -13,7 +13,7 @@ load_dotenv()
 
 
 def _print_message(message: ChatMessage) -> None:
-    """可读地打印一条消息（schemal 层不再提供 UI 方法，归位到调用方）。"""
+    """可读地打印一条消息（schema 层不再提供 UI 方法，归位到调用方）。"""
     base_title = message.type.title() + " Message"
     padded = " " + base_title + " "
     sep_len = (80 - len(padded)) // 2
