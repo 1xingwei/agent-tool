@@ -4,6 +4,8 @@
 无 DeepSeek key 时才用 Groq 专用安全模型，两者都缺则降级 SAFE。
 """
 
+import pytest
+
 from agents.safeguard import Safeguard, SafetyAssessment
 
 
@@ -98,3 +100,42 @@ def test_safeguard_uses_fake_model_without_live_calls(monkeypatch) -> None:
     monkeypatch.setattr("agents.safeguard.settings.GROQ_API_KEY", None)
     sav = Safeguard()
     assert sav.model is None
+
+
+def _boom_safeguard(cls):
+    class BoomModel:
+        def with_config(self, **kwargs):
+            return self
+
+        def invoke(self, *a, **k):
+            raise RuntimeError("402 - Insufficient Balance")
+
+        async def ainvoke(self, *a, **k):
+            raise RuntimeError("402 - Insufficient Balance")
+
+    sav = cls.__new__(cls)
+    sav.model = BoomModel()
+    sav.system_prompt = "test"
+    return sav
+
+
+def test_safeguard_invoke_survives_model_failure(monkeypatch) -> None:
+    """守卫的模型调用失败（402/429/超时）不应当让整次请求崩溃（docs/20 F1）。
+
+    注入式反例：把 `except Exception` 从 invoke 删掉，本用例必须变红。
+    """
+    from langchain_core.messages import HumanMessage
+
+    sav = _boom_safeguard(Safeguard)
+    out = sav.invoke([HumanMessage(content="hi")])
+    assert out.safety_assessment == SafetyAssessment.ERROR
+
+
+@pytest.mark.asyncio
+async def test_safeguard_ainvoke_survives_model_failure(monkeypatch) -> None:
+    """同上，异步路径（真正被 factory 入口节点使用的路径）。"""
+    from langchain_core.messages import HumanMessage
+
+    sav = _boom_safeguard(Safeguard)
+    out = await sav.ainvoke([HumanMessage(content="hi")])
+    assert out.safety_assessment == SafetyAssessment.ERROR

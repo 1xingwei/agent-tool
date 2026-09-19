@@ -125,7 +125,11 @@ async def remember_review(
     user_id = config["configurable"].get("user_id", "anonymous")
     namespace = ("code-reviewer", user_id)
     key = f"review-{datetime.now().strftime('%Y%m%d')}"
-    await store.aput(namespace, key, {"conclusion": last_message.content})
+    try:
+        await store.aput(namespace, key, {"conclusion": last_message.content})
+    except Exception as e:
+        # 记忆写失败不应影响已经生成的审查回答（docs/20 F7）
+        logger.warning("Failed to remember review: %s: %s", type(e).__name__, e)
     return {"messages": []}
 
 

@@ -56,9 +56,9 @@ how graphs are wired at startup, and the design trade-offs.
 
 ### Documentation
 
-The Chinese docs live in `docs/`, flat and numbered `01`–`19` in reading order.
+The Chinese docs live in `docs/`, flat and numbered `01`–`22` in reading order.
 `01` is the architecture overview, `02`–`07` are provider and feature guides,
-`08`–`09` are design specs, and `10`–`19` are engineering records:
+`08`–`09` are design specs, and `10`–`22` are engineering records:
 
 | # | Doc | What it covers |
 |---|---|---|
@@ -81,6 +81,9 @@ The Chinese docs live in `docs/`, flat and numbered `01`–`19` in reading order
 | 17 | [审查台账](docs/17-审查台账.md) | The audit ledger: per-item evidence behind the 8 findings |
 | 18 | [代码审核与落地验收](docs/18-代码审核与落地验收.md) | Verification round: the 8 fixes accepted, plus gate/doc-drift findings |
 | 19 | [代码审核（第四轮）](docs/19-代码审核（第四轮）.md) | Fourth round: prior fixes accepted, plus a test-pollutes-index defect and a silent recall-k failure |
+| 20 | [代码审核（第五轮）](docs/20-代码审核（第五轮）.md) | Fifth round: gates green but eight defects found in the gaps — a fatal safeguard, a never-working FTS path, and how the 311 tests miss them |
+| 21 | [第五轮修复落地验收](docs/21-第五轮修复落地验收.md) | Acceptance round: all 12 injection counter-examples go red, plus a test-suite hole that opens production DBs |
+| 22 | [第六轮审核](docs/22-第六轮审核.md) | Sixth round: V1/V2 fixes land but their guards don't hold — a permanently-green test, an unisolated Chroma dir, and a case-insensitive-denylist bypass that Linux CI cannot see |
 
 ### Key Features
 

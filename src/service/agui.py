@@ -102,7 +102,7 @@ async def agui_run(
     """
     try:
         graph: AgentGraph = get_agent(agent_id)
-    except (KeyError, RuntimeError):
+    except KeyError:
         raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found")
 
     config = _base_config(input_data, agent_id)

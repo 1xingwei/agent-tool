@@ -7,6 +7,33 @@ from langchain_core.tools import tool
 
 DEFAULT_REPO = Path.cwd()
 
+_SENSITIVE_PARTS = {
+    ".venv",
+    "__pycache__",
+    "node_modules",
+    "privatecredentials",
+    ".git",
+}
+_SENSITIVE_SUFFIXES = (".pem", ".key", ".sqlite", ".db")
+# 精确名单拦不住 .env.local / .env.production / id_rsa / service-account.json
+# 等常见变体（docs/20 第五轮 V2），改前缀与名字模式匹配。
+_SENSITIVE_PART_PREFIXES = (".env",)
+_SENSITIVE_FILE_NAMES = ("id_rsa", "id_ed25519", "id_dsa")
+_SENSITIVE_NAME_SUBSTRINGS = ("service-account",)
+
+
+def _is_sensitive(rel: str) -> bool:
+    parts = [p for p in rel.split("/") if p not in ("", ".")]
+    if any(p in _SENSITIVE_PARTS for p in parts):
+        return True
+    if any(p.startswith(prefix) for p in parts for prefix in _SENSITIVE_PART_PREFIXES):
+        return True
+    if any(p in _SENSITIVE_FILE_NAMES for p in parts):
+        return True
+    if any(sub in p for p in parts for sub in _SENSITIVE_NAME_SUBSTRINGS):
+        return True
+    return any(rel.endswith(sfx) for sfx in _SENSITIVE_SUFFIXES)
+
 
 def _git(repo_path: str, args: list[str]) -> str:
     cmd = ["git", "-c", "color.ui=false", "--no-pager", *args]
@@ -113,9 +140,9 @@ def file_search(
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        if any(p in path.parts for p in (".git", ".venv", "__pycache__", "node_modules")):
-            continue
         rel = str(path.relative_to(root)).replace("\\", "/")
+        if _is_sensitive(rel):
+            continue
         if name_re and not name_re.search(rel):
             continue
         if content_re:
@@ -149,6 +176,9 @@ def read_file(repo_path: str = str(DEFAULT_REPO), path: str = "", max_chars: int
     root = _repo_root(repo_path)
     if ".." in Path(path).parts:
         return "error: path must stay inside the repository"
+    rel = Path(path).as_posix()
+    if _is_sensitive(rel):
+        return f"error: path is sensitive and cannot be read: {path}"
     full = (root / path).resolve()
     if not full.is_file() or not full.is_relative_to(root):
         return f"error: not a file inside the repository: {path}"

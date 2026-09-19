@@ -227,6 +227,42 @@ async def test_astream(agent_client):
 
 
 @pytest.mark.asyncio
+async def test_astream_unknown_event_type_does_not_truncate(agent_client):
+    """未知 SSE 事件类型（如未来新增的 heartbeat）不得被当成 [DONE]（docs/20 F6）。
+
+    反例注入：把 `_parse_stream_line` 的未知类型分支改回 `return None`，本用例必须变红。
+    """
+    events = (
+        'data: {"type": "token", "content": "A"}',
+        'data: {"type": "heartbeat", "content": "ping"}',  # 未知类型，应跳过
+        'data: {"type": "token", "content": "B"}',
+        "data: [DONE]",
+    )
+
+    async def async_events():
+        for event in events:
+            yield event
+
+    mock_response = AsyncMock()
+    mock_response.status_code = 200
+    mock_response.request = Request("POST", "http://test/stream")
+    mock_response.raise_for_status = Mock()
+    mock_response.aiter_lines = Mock(return_value=async_events())
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.stream = Mock(return_value=mock_response)
+
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        responses = []
+        async for response in agent_client.astream("hello"):
+            responses.append(response)
+
+    assert responses == ["A", "B"]
+
+
+@pytest.mark.asyncio
 async def test_acreate_feedback(agent_client):
     """测试异步反馈创建。"""
     RUN_ID = "test-run"

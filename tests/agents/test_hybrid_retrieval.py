@@ -7,6 +7,7 @@
 全部离线：不读真实向量库、不下载模型。
 """
 
+import logging
 import sqlite3
 
 import pytest
@@ -108,6 +109,96 @@ def test_vector_hits_honors_requested_k(monkeypatch) -> None:
 
     assert settings.HYBRID_RECALL_K > settings.RAG_TOP_K, "前置：默认配置下 recall_k 应大于 top_k"
     assert len(out) == settings.HYBRID_RECALL_K, "向量路没有按请求的 k 召回（R2 回归）"
+
+
+def _make_sidecar(tmp_path, rows: list[tuple[str, str]]) -> str:
+    """建一个含多行 chunk 的 FTS5 侧车库，返回 db 路径。"""
+    db = str(tmp_path / "fts.sqlite")
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE VIRTUAL TABLE chunks USING fts5(chunk_id, source, page, content)")
+    for chunk_id, content in rows:
+        conn.execute("INSERT INTO chunks VALUES (?, 'a.md', 0, ?)", (chunk_id, content))
+    conn.commit()
+    conn.close()
+    return db
+
+
+# --- P0-8 守卫（docs/20 F2a）：FTS 查询串规范化 ---
+
+
+def test_fts_hits_normalizes_hostile_queries(monkeypatch, tmp_path, caplog) -> None:
+    """引号/连字符/裸操作符等常见写法不得让 FTS 查询抛错，且同形 token 能命中。
+
+    反例注入：把 `_normalize_fts_query` 改回直传原始串，本用例必须变红。
+    """
+    db = _make_sidecar(
+        tmp_path,
+        [
+            ("f1", "handbook policy for employees"),
+            ("f2", "mission and vision statement"),
+            ("f3", "year-end bonus"),
+        ],
+    )
+    monkeypatch.setattr(hr.settings, "CHROMA_FTS_DB", db)
+
+    expected = {"f1", "f2", "f3"}
+    for q in ['what is the "policy', "handbook-policy", "policy AND", "mission OR", "* draft"]:
+        out = hr._fts_hits(q, 5)  # 必须不抛 OperationalError
+        ids = {d.metadata["chunk_id"] for d in out}
+        assert ids <= expected, f"查询 {q!r} 返回了未知 chunk: {ids}"
+    # 至少能命中同形 token（handbook-policy 拆成 handbook OR policy → 命中 f1）
+    out = hr._fts_hits("handbook-policy", 5)
+    assert "f1" in {d.metadata["chunk_id"] for d in out}
+
+
+def test_fts_hits_no_syntax_error_when_empty_after_normalization(monkeypatch, tmp_path) -> None:
+    """全操作符/空查询规范化后不能抛 sqlite 语法错。"""
+    db = _make_sidecar(tmp_path, [("f1", "some content")])
+    monkeypatch.setattr(hr.settings, "CHROMA_FTS_DB", db)
+    for q in ["AND", "OR NOT", "", "   "]:
+        assert hr._fts_hits(q, 5) == []
+
+
+def test_fts_hits_warns_when_normalization_empties_query(monkeypatch, tmp_path, caplog) -> None:
+    """规范化后空查询这条空手出口也要留 warning，不能静默退化（docs/20 第五轮 V4）。
+
+    反例注入：把 `:50` 的 `logger.warning` 删掉恢复静默，本用例必须变红。
+    """
+    db = _make_sidecar(tmp_path, [("f1", "some content")])
+    monkeypatch.setattr(hr.settings, "CHROMA_FTS_DB", db)
+
+    with caplog.at_level(logging.WARNING, logger=hr.logger.name):
+        hr._fts_hits("AND NOT OR", 5)
+
+    assert any(r.levelno >= logging.WARNING for r in caplog.records)
+
+
+def test_fts_hits_warns_on_zero_hits(monkeypatch, tmp_path, caplog) -> None:
+    """FTS 侧车库存在但 0 命中时必须产生 warning，不能静默退化纯向量（docs/20 F2b）。
+
+    反例注入：把 warning 降回 debug，本用例必须变红。
+    """
+    db = _make_sidecar(tmp_path, [("f1", "some content")])
+    monkeypatch.setattr(hr.settings, "CHROMA_FTS_DB", db)
+
+    with caplog.at_level(logging.WARNING, logger=hr.logger.name):
+        hr._fts_hits("no-such-term-anywhere", 5)
+
+    assert any("0 命中" in r.message or "no hits" in r.message for r in caplog.records)
+
+
+def test_fts_hits_warns_on_failure(monkeypatch, tmp_path, caplog) -> None:
+    """FTS 查询真实失败时必须产生 warning（docs/20 F2b）。"""
+
+    bogus = str(tmp_path / "bogus.sqlite")
+    with open(bogus, "w", encoding="utf-8") as f:
+        f.write("not a sqlite database")
+    monkeypatch.setattr(hr.settings, "CHROMA_FTS_DB", bogus)
+
+    with caplog.at_level(logging.WARNING, logger=hr.logger.name):
+        hr._fts_hits("anything", 5)
+
+    assert any(r.levelno >= logging.WARNING for r in caplog.records)
 
 
 # --- P0-9 索引对账 ---

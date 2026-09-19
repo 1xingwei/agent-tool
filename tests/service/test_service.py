@@ -268,6 +268,27 @@ def test_unknown_agent_returns_404(test_client, method, path, kwargs) -> None:
     assert "no-such-agent" in response.json()["detail"]
 
 
+def test_unloaded_agent_returns_500(test_client) -> None:
+    """未加载的懒加载 agent 是「服务器状态 bug」，必须是 500，而不是 404（docs/20 F5）。
+
+    与 AG-UI 端点（service/agui.py）的约定一致：KeyError → 404，RuntimeError → 500。
+    反例注入：把 `_resolve_agent` 的 except 扩成 `(KeyError, RuntimeError)`，本用例必须变红。
+    """
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+
+    from service.service import app
+
+    def agent_lookup(agent_id):
+        raise RuntimeError(f"Agent {agent_id} not loaded. Call load() first.")
+
+    with patch("service.service.get_agent", side_effect=agent_lookup):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post("/lazy-agent/invoke", json={"message": "hi"})
+    assert response.status_code == 500
+
+
 def test_history_custom_agent(test_client) -> None:
     """测试 /{agent_id}/history 通过所请求 agent 的图读取 thread。"""
     CUSTOM_AGENT = "custom_agent"

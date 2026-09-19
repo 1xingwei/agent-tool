@@ -4,7 +4,7 @@ import os
 import queue
 from collections.abc import AsyncGenerator, Coroutine, Generator
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
+from typing import Any, cast, final
 
 import httpx
 
@@ -90,6 +90,15 @@ def _drive_iter[T](agen: AsyncGenerator[T, None]) -> Generator[T, None, None]:
 
 class AgentClientError(Exception):
     pass
+
+
+@final
+class _UnknownEvent:
+    pass
+
+
+# 哨兵：未知事件类型不产出任何值，但也不能被当成 [DONE]（流结束）。
+_UNKNOWN_EVENT = _UnknownEvent()
 
 
 class AgentClient:
@@ -220,7 +229,7 @@ class AgentClient:
             )
         )
 
-    def _parse_stream_line(self, line: str) -> ChatMessage | str | None:
+    def _parse_stream_line(self, line: str) -> ChatMessage | str | None | _UnknownEvent:
         line = line.strip()
         if line.startswith("data: "):
             data = line[6:]
@@ -243,7 +252,10 @@ class AgentClient:
                 case "error":
                     error_msg = "Error: " + parsed["content"]
                     return ChatMessage(type="ai", content=error_msg)
-        return None
+                case _:
+                    # 未知类型（如未来新增的 heartbeat）：跳过，而不是当成流结束
+                    return _UNKNOWN_EVENT
+        return _UNKNOWN_EVENT
 
     def stream(
         self,
@@ -322,9 +334,11 @@ class AgentClient:
                                 parsed = self._parse_stream_line(line)
                                 if parsed is None:
                                     break
+                                if parsed is _UNKNOWN_EVENT:
+                                    continue
                                 # 不要产出空字符串 token，它们会导致生成器出现问题
                                 if parsed != "":
-                                    yield parsed
+                                    yield cast(ChatMessage | str, parsed)
                     finally:
                         await lines.aclose()  # type: ignore[missing-attribute]
             except httpx.HTTPError as e:

@@ -126,11 +126,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 try:
                     await load_agent(a.key)
                     logger.info(f"Agent loaded: {a.key}")
+                    agent = get_agent(a.key)
                 except Exception as e:
                     logger.error(f"Failed to load agent {a.key}: {e}")
                     # 继续处理其他 agent，而非让启动失败
-
-                agent = get_agent(a.key)
+                    continue
                 # 设置 checkpointer 用于 thread 作用域记忆（对话历史）
                 agent.checkpointer = saver
                 # 设置 store 用于长期记忆（跨对话知识）

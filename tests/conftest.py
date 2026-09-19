@@ -36,19 +36,22 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_fts_sidecar(tmp_path, monkeypatch):
-    """全局兜底：默认把 FTS 侧车库指到临时目录，任何测试都别碰生产索引。
+def _isolate_stateful_backends(tmp_path, monkeypatch):
+    """全局兜底：任何测试都别碰生产侧车与生产 SQLite 库。
 
-    `settings.CHROMA_FTS_DB` 的默认值是**相对 CWD 的 `./var/chroma_fts.sqlite`**，
-    也就是生产 RAG 索引；而 `create_chroma_db` 建库时会先 `DROP TABLE` 再重建。
-    因此只要有一个测试忘了显式隔离，跑一次测试就会把生产索引覆盖成测试语料 ——
-    这在 `tests/test_ingest.py` 与 `tests/agents/test_hybrid_retrieval.py` 上
-    各实测发生过一次（docs/19 R1）。
+    `settings.CHROMA_FTS_DB` 与 `SQLITE_DB_PATH/SQLITE_STORE_PATH` 的默认值都是
+    **相对 CWD 的 `./var/...`**。建 index 的路径会在重建时 `DROP TABLE`，
+    而 `TestClient(app)` 会真跑 lifespan、打开 `get_sqlite_saver/store` 指向的
+    库——两者都会在跑测试的瞬间改写/重建生产 `var/` 文件。这一度只在 FTS
+    上实测暴露（docs/19 R1），随后 F5 的 500 用例又给 lifespan 开了两个新触发点
+    （docs/20 第五轮 V1）。
 
     这里做系统性兜底而不是逐点打补丁：需要断言「默认取 settings」这条分支的用例
-    （如 `test_ingest_builds_fts_sidecar`）可以在测试体内再 monkeypatch 覆盖回来。
+    可以在测试体内再 monkeypatch 覆盖回来。
     """
     monkeypatch.setattr(settings, "CHROMA_FTS_DB", str(tmp_path / "chroma_fts.sqlite"))
+    monkeypatch.setattr(settings, "SQLITE_DB_PATH", str(tmp_path / "checkpoints.db"))
+    monkeypatch.setattr(settings, "SQLITE_STORE_PATH", str(tmp_path / "memory_store.db"))
 
 
 @pytest.fixture

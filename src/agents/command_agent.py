@@ -17,7 +17,6 @@ class AgentState(MessagesState, total=False):
 
 
 def node_a(state: AgentState) -> Command[Literal["node_b", "node_c"]]:
-    print("Called A")
     value = random.choice(["a", "b"])
     goto: Literal["node_b", "node_c"]
     # 这是条件边函数的替代方案
@@ -36,12 +35,10 @@ def node_a(state: AgentState) -> Command[Literal["node_b", "node_c"]]:
 
 
 def node_b(state: AgentState):
-    print("Called B")
     return {"messages": [AIMessage(content="Hello B")]}
 
 
 def node_c(state: AgentState):
-    print("Called C")
     return {"messages": [AIMessage(content="Hello C")]}
 
 

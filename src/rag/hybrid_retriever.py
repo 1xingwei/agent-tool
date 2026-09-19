@@ -10,6 +10,7 @@
 
 import logging
 import os
+import re
 import sqlite3
 
 from langchain_core.documents import Document
@@ -21,10 +22,33 @@ logger = logging.getLogger(__name__)
 
 RRF_K = 60  # RRF 平滑常数
 
+_FTS_STOPWORDS = {"AND", "OR", "NOT", "NEAR"}
+_FTS_TOKEN_RE = re.compile(r"[a-zA-Z0-9\u4e00-\u9fff\u3400-\u4dbf]+")
+
+
+def _normalize_fts_query(query: str) -> str:
+    """把用户原始串转成安全的 FTS5 MATCH 表达式。
+
+    直接吃原始串会让连字符词（被解析成列名）、引号（unterminated string）、
+    裸 AND/OR（语法错）等常见自然语言写法抛 OperationalError（docs/20 F2a）。
+    这里按非字母数字切分，丢弃 FTS5 操作符，每个 token 加双引号后用 OR 连接，
+    从而让「查询健壮性」与「词级精确召回」两者兼得。返回空串表示无从查询。
+    """
+    tokens = [
+        t for t in _FTS_TOKEN_RE.findall(query) if t.upper() not in _FTS_STOPWORDS and t.strip()
+    ]
+    if not tokens:
+        return ""
+    return " OR ".join(f'"{t}"' for t in tokens)
+
 
 def _fts_hits(query: str, k: int) -> list[Document]:
     """从 FTS5 侧车库召回 top-k 片段；侧车库缺失或查询失败时返回空列表。"""
     if not os.path.exists(settings.CHROMA_FTS_DB):
+        return []
+    normalized = _normalize_fts_query(query)
+    if not normalized:
+        logger.warning("FTS5 查询规范化后为空，退化为纯向量（query=%r）", query)
         return []
     try:
         conn = sqlite3.connect(settings.CHROMA_FTS_DB)
@@ -33,12 +57,12 @@ def _fts_hits(query: str, k: int) -> list[Document]:
             rows = conn.execute(
                 "SELECT chunk_id, source, page, content FROM chunks "
                 "WHERE chunks MATCH ? ORDER BY bm25(chunks) LIMIT ?",
-                (query, k),
+                (normalized, k),
             ).fetchall()
         finally:
             conn.close()
     except sqlite3.Error as e:
-        logger.debug("FTS5 检索失败，退化为纯向量：%s", e)
+        logger.warning("FTS5 检索失败，退化为纯向量：%s", e)
         return []
     docs = []
     for chunk_id, source, page, content in rows:
@@ -48,6 +72,8 @@ def _fts_hits(query: str, k: int) -> list[Document]:
                 metadata={"chunk_id": chunk_id, "source": source, "page": page},
             )
         )
+    if not docs:
+        logger.warning("FTS5 侧车库存在但 0 命中：%r（query=%r）", normalized, query)
     return docs
 
 

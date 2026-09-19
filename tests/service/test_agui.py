@@ -146,6 +146,27 @@ def test_agui_unknown_agent(mock_agui_agent, test_client) -> None:
     assert response.status_code == 404
 
 
+def test_agui_unloaded_agent_is_not_404(mock_agui_agent, test_client) -> None:
+    """未加载的懒加载 agent 是「服务器状态 bug」，不是「agent 不存在」（docs/20 F5）。
+
+    与原生 /invoke（service._resolve_agent 会把 RuntimeError 当 500）保持一致，
+    AG-UI 端点必须只把 KeyError 映射成 404，RuntimeError 应继续以 500 暴露。
+    反例注入：把 agui.py 的 except 改回 `(KeyError, RuntimeError)`，本用例必须变红。
+    """
+
+    def agent_lookup(agent_id: str):
+        raise RuntimeError(f"Agent {agent_id} not loaded. Call load() first.")
+
+    from fastapi.testclient import TestClient
+
+    from service.service import app
+
+    with patch("service.agui.get_agent", side_effect=agent_lookup):
+        with TestClient(app, raise_server_exceptions=False) as client:
+            response = client.post("/agui/lazy-agent/run", json=run_input())
+    assert response.status_code == 500
+
+
 def test_agui_configurable_passthrough(mock_agui_agent, allow_fake_model, test_client) -> None:
     """forwardedProps.configurable 的值会到达 agent 的 configurable。"""
     body = run_input(

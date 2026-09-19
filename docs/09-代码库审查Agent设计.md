@@ -42,10 +42,10 @@ guard_input(entry) ──check_safety──┬─ unsafe → block_unsafe_conten
 ```
 
 即：**安全闸 → 记忆读 → 会话蒸馏 → 模型**，模型侧带工具回环，收尾写记忆。
-图由 `build_tool_agent_graph` 按 5 节点骨架装配（`graph_factory.py:98`），
+图由 `build_tool_agent_graph` 按 5 节点骨架装配（`graph_factory.py:103`），
 `code_reviewer` 通过 `extra_nodes` / `extra_edges` 挂记忆读、蒸馏与记忆写节点。
 
-### 1.1 状态（`AgentState`，`graph_factory.py:26-32`，共享）
+### 1.1 状态（`AgentState`，`graph_factory.py:30-36`，共享）
 
 | 字段 | 类型 | 谁写 | 为什么存在 |
 |---|---|---|---|
@@ -66,16 +66,16 @@ guard_input(entry) ──check_safety──┬─ unsafe → block_unsafe_conten
 
 | 节点 | 位置 | 做什么 | 边界与取舍 |
 |---|---|---|---|
-| `guard_input` | `graph_factory.py:69` | `Safeguard().ainvoke(messages)` → `safety` | **可选**：`GROQ_API_KEY` 为空时 `Safeguard.model=None` 并直接返回 `SAFE`（`safeguard.py:92-93,112-113`），本机走的就是这条降级路径 |
-| `check_safety` | `graph_factory.py:80` | 条件边：`UNSAFE` → `unsafe`，其余 → `safe` | 用 `match` 而非 `if`，未知取值落 `safe` |
-| `block_unsafe_content` | `graph_factory.py:75` | 拼一条显式拒答 `AIMessage` → END | 不进入模型，也就不消耗模型调用 |
+| `guard_input` | `graph_factory.py:74` | `Safeguard().ainvoke(messages)` → `safety` | **可选**：有 `DEEPSEEK_API_KEY`（或兜底的 `GROQ_API_KEY`）时 `Safeguard.model` 非空、每个请求真调一次模型；两者都缺才降级直接返回 `SAFE`（`safeguard.py:99-108,122-123,135-136`） |
+| `check_safety` | `graph_factory.py:85` | 条件边：`UNSAFE` → `unsafe`，其余 → `safe` | 用 `match` 而非 `if`，未知取值落 `safe` |
+| `block_unsafe_content` | `graph_factory.py:80` | 拼一条显式拒答 `AIMessage` → END | 不进入模型，也就不消耗模型调用 |
 | `recall_reviews` | `code_reviewer.py:62` | 读路径：`store.asearch(namespace, query=最后一条人类消息, limit=3)` | 见 §4；`score is None` 一律跳过 |
 | `distill_history` | `core/distill.py` | 阈值触发 LLM 摘要，产出 `distilled_summary` | **同步节点**（内部 `model.invoke`）；关闭时只做一次阈值判断并返回 `{"messages": []}` |
-| `model` | `graph_factory.py:115` | `wrap_model(model).ainvoke(state)`，即 `[SystemMessage] + state["messages"]`（经 `apply_distillation` 折叠） | `remaining_steps < 2` 且仍有 `tool_calls` → 回「Sorry, need more steps to process this request.」 |
-| `tools` | `graph_factory.py:135` | `ToolNode(tools)` | 固定 `tools → model`，回环由 `pending_tool_calls` 控制 |
+| `model` | `graph_factory.py:120` | `wrap_model(model).ainvoke(state)`，即 `[SystemMessage] + state["messages"]`（经 `apply_distillation` 折叠） | `remaining_steps < 2` 且仍有 `tool_calls` → 回「Sorry, need more steps to process this request.」 |
+| `tools` | `graph_factory.py:140` | `ToolNode(tools)` | 固定 `tools → model`，回环由 `pending_tool_calls` 控制 |
 | `remember_review` | `code_reviewer.py:110` | 把最终结论 `aput` 进 store | 三重守卫，见 §4 |
 
-### 2.1 提示词组装（`wrap_model`，`graph_factory.py:35-59`）
+### 2.1 提示词组装（`wrap_model`，`graph_factory.py:39-64`）
 
 ```text
 [SystemMessage(instructions [+ 召回历史结论块])] + apply_distillation(state["messages"], distilled_summary)
@@ -130,7 +130,7 @@ docstring，**不译提示词**。召回到历史结论时，会在 system 后�
 
 - 默认 `DISTILL_ENABLED=False`，不配置即零行为变化。
 - 摘要写在 `state["distilled_summary"]`，**不进 `messages`**，否则 `/history` 会被污染。
-- 折叠真的到达 `model`：工厂 `_wrap_model.build_messages`（`graph_factory.py:48-56`）
+- 折叠真的到达 `model`：工厂 `_wrap_model.build_messages`（`graph_factory.py:53-61`）
   构造视图时调用 `apply_distillation`，模型看到的是折叠后的消息。
   实际修法见 `docs/15` §7.2.3（已执行）。
 - **覆盖范围**：折叠只在**走 `graph_factory`** 的 agent 上生效 —— 目前是

@@ -90,6 +90,91 @@ def test_read_file_blocks_traversal(tmp_path) -> None:
     assert "stay inside" in out
 
 
+def test_read_file_blocks_sensitive_paths(tmp_path) -> None:
+    """read_file 必须拒绝 .env / privatecredentials 等敏感路径（docs/20 F3）。
+
+    反例注入：把 denylist 从 read_file 删掉，本用例必须变红。
+    """
+    _make_repo(
+        tmp_path,
+        {
+            ".env": "AUTH_SECRET=supersecret\nDEEPSEEK_API_KEY=sk-1234\n",
+            "privatecredentials/.gitkeep": "",
+            "config/settings.py": "AUTH_SECRET = get_env('AUTH_SECRET')",
+        },
+    )
+    for path in (".env", "privatecredentials/.gitkeep"):
+        out = tools.read_file.func(repo_path=str(tmp_path), path=path)
+        assert "sensitive" in out, f"{path} 应被拒绝，实际返回了内容"
+    # 正常文件不受影响
+    out = tools.read_file.func(repo_path=str(tmp_path), path="config/settings.py")
+    assert "get_env" in out
+
+
+def test_read_file_blocks_env_variants_and_keys(tmp_path) -> None:
+    """denylist 必须按模式而非精确名单拦截变体（docs/20 第五轮 V2）。
+
+    `.env.local`、`.env.production`、`id_rsa`、`service-account.json`、`app.db`
+    精确名单全部放行；反例注入：把 `_is_sensitive` 改回精确名集合，本用例必须变红。
+    """
+    _make_repo(
+        tmp_path,
+        {
+            ".env.local": "DEEPSEEK_API_KEY=sk-5678\n",
+            ".env.production": "AUTH_SECRET=prod-secret\n",
+            "keys/id_rsa": "-----BEGIN PRIVATE KEY-----",
+            "svc/service-account.json": '{"private_key": "x"}',
+            "data/app.db": "\x00\x00\x01sqlite",
+            "config/settings.py": "AUTH_SECRET = get_env('AUTH_SECRET')",
+        },
+    )
+    for path in (
+        ".env.local",
+        ".env.production",
+        "keys/id_rsa",
+        "svc/service-account.json",
+        "data/app.db",
+    ):
+        out = tools.read_file.func(repo_path=str(tmp_path), path=path)
+        assert "sensitive" in out, f"{path} 应被拒绝，实际返回了内容"
+    out = tools.read_file.func(repo_path=str(tmp_path), path="config/settings.py")
+    assert "get_env" in out
+
+
+def test_file_search_skips_sensitive_paths(tmp_path) -> None:
+    """file_search 不得在敏感路径上命中内容（docs/20 F3）。
+
+    反例注入：把 denylist 从 file_search 删掉，本用例必须变红。
+    """
+    _make_repo(
+        tmp_path,
+        {
+            ".env": "AUTH_SECRET=supersecret\n",
+            ".env.example": "AUTH_SECRET=\n",
+            "privatecredentials/secret.txt": "AUTH_SECRET=hush\n",
+            "config/settings.py": "AUTH_SECRET = get_env('AUTH_SECRET')",
+        },
+    )
+    hits = tools.file_search.func(repo_path=str(tmp_path), content_pattern="AUTH_SECRET")
+    lines = hits.splitlines()
+    assert all((".env" not in line and "privatecredentials" not in line) for line in lines), lines
+    # 正常路径仍可命中
+    assert any("config/settings.py" in line for line in lines), lines
+
+
+def test_file_search_skips_env_by_name(tmp_path) -> None:
+    """即使不按内容过滤，.env 也不应出现在名称搜索结果里。"""
+    _make_repo(
+        tmp_path,
+        {
+            ".env": "AUTH_SECRET=x\n",
+            "notes/env.md": "plain notes\n",
+        },
+    )
+    hits = tools.file_search.func(repo_path=str(tmp_path), name_pattern=r"\.env")
+    assert all(line != ".env" for line in hits.splitlines()), hits
+
+
 @pytest.mark.asyncio
 async def test_remember_review_writes_store(tmp_path) -> None:
     from langgraph.store.memory import InMemoryStore
@@ -110,3 +195,19 @@ async def test_remember_review_without_store_is_a_noop() -> None:
     """独立调用（`langgraph dev`、run_agent.py）传入 store=None。"""
     state = {"messages": [AIMessage(content="review done")]}
     assert await remember_review(state, {"configurable": {}}, None) == {"messages": []}
+
+
+@pytest.mark.asyncio
+async def test_remember_review_write_failure_is_nonfatal() -> None:
+    """写路径失败（database is locked）不得拖垮已生成完的整次审查（docs/20 F7）。
+
+    反例注入：把 remember_review 的 try/except 删掉，本用例必须变红。
+    """
+
+    class BoomStore:
+        async def aput(self, *a, **k):
+            raise RuntimeError("database is locked")
+
+    state = {"messages": [AIMessage(content="review done")]}
+    out = await remember_review(state, {"configurable": {"user_id": "u1"}}, BoomStore())
+    assert out == {"messages": []}

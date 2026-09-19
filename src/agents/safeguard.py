@@ -122,14 +122,26 @@ class Safeguard:
         if self.model is None:
             return SafeguardOutput(safety_assessment=SafetyAssessment.SAFE)
         compiled_messages = self._compile_messages(messages)
-        result = self.model.invoke(compiled_messages)
+        try:
+            result = self.model.invoke(compiled_messages)
+        except Exception as e:
+            logger.warning(
+                "Safeguard model invocation failed, failing open: %s: %s", type(e).__name__, e
+            )
+            return SafeguardOutput(safety_assessment=SafetyAssessment.ERROR)
         return parse_safeguard_output(str(result.content))
 
     async def ainvoke(self, messages: list[AnyMessage]) -> SafeguardOutput:
         if self.model is None:
             return SafeguardOutput(safety_assessment=SafetyAssessment.SAFE)
         compiled_messages = self._compile_messages(messages)
-        result = await self.model.ainvoke(compiled_messages)
+        try:
+            result = await self.model.ainvoke(compiled_messages)
+        except Exception as e:
+            logger.warning(
+                "Safeguard model invocation failed, failing open: %s: %s", type(e).__name__, e
+            )
+            return SafeguardOutput(safety_assessment=SafetyAssessment.ERROR)
         return parse_safeguard_output(str(result.content))
 
 
